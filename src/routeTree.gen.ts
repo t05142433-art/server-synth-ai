@@ -9,38 +9,229 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCurlTesterRouteImport } from './routes/_authenticated/curl-tester'
+import { Route as AuthenticatedAiZipRouteImport } from './routes/_authenticated/ai-zip'
+import { Route as ApiToolsCurlRouteImport } from './routes/api/tools/curl'
+import { Route as ApiAiZipRouteImport } from './routes/api/ai/zip'
+import { Route as ApiAiFixCurlRouteImport } from './routes/api/ai/fix-curl'
+import { Route as ApiAiConfigureRouteImport } from './routes/api/ai/configure'
+import { Route as ApiAiAutoConfigureRouteImport } from './routes/api/ai/auto-configure'
+import { Route as AuthenticatedServersIdRouteImport } from './routes/_authenticated/servers.$id'
+import { Route as AuthenticatedServerlogsIdRouteImport } from './routes/_authenticated/serverlogs.$id'
+import { Route as ApiPublicSSlugRouteImport } from './routes/api/public/s/$slug'
+import { Route as ApiPublicPSlugRouteImport } from './routes/api/public/p/$slug'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCurlTesterRoute = AuthenticatedCurlTesterRouteImport.update({
+  id: '/curl-tester',
+  path: '/curl-tester',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAiZipRoute = AuthenticatedAiZipRouteImport.update({
+  id: '/ai-zip',
+  path: '/ai-zip',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiToolsCurlRoute = ApiToolsCurlRouteImport.update({
+  id: '/api/tools/curl',
+  path: '/api/tools/curl',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiZipRoute = ApiAiZipRouteImport.update({
+  id: '/api/ai/zip',
+  path: '/api/ai/zip',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiFixCurlRoute = ApiAiFixCurlRouteImport.update({
+  id: '/api/ai/fix-curl',
+  path: '/api/ai/fix-curl',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiConfigureRoute = ApiAiConfigureRouteImport.update({
+  id: '/api/ai/configure',
+  path: '/api/ai/configure',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiAutoConfigureRoute = ApiAiAutoConfigureRouteImport.update({
+  id: '/api/ai/auto-configure',
+  path: '/api/ai/auto-configure',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedServersIdRoute = AuthenticatedServersIdRouteImport.update({
+  id: '/servers/$id',
+  path: '/servers/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedServerlogsIdRoute =
+  AuthenticatedServerlogsIdRouteImport.update({
+    id: '/serverlogs/$id',
+    path: '/serverlogs/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const ApiPublicSSlugRoute = ApiPublicSSlugRouteImport.update({
+  id: '/api/public/s/$slug',
+  path: '/api/public/s/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPSlugRoute = ApiPublicPSlugRouteImport.update({
+  id: '/api/public/p/$slug',
+  path: '/api/public/p/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/ai-zip': typeof AuthenticatedAiZipRoute
+  '/curl-tester': typeof AuthenticatedCurlTesterRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
+  '/servers/$id': typeof AuthenticatedServersIdRoute
+  '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
+  '/api/ai/configure': typeof ApiAiConfigureRoute
+  '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/zip': typeof ApiAiZipRoute
+  '/api/tools/curl': typeof ApiToolsCurlRoute
+  '/api/public/p/$slug': typeof ApiPublicPSlugRoute
+  '/api/public/s/$slug': typeof ApiPublicSSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/ai-zip': typeof AuthenticatedAiZipRoute
+  '/curl-tester': typeof AuthenticatedCurlTesterRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
+  '/servers/$id': typeof AuthenticatedServersIdRoute
+  '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
+  '/api/ai/configure': typeof ApiAiConfigureRoute
+  '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/zip': typeof ApiAiZipRoute
+  '/api/tools/curl': typeof ApiToolsCurlRoute
+  '/api/public/p/$slug': typeof ApiPublicPSlugRoute
+  '/api/public/s/$slug': typeof ApiPublicSSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_authenticated/ai-zip': typeof AuthenticatedAiZipRoute
+  '/_authenticated/curl-tester': typeof AuthenticatedCurlTesterRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
+  '/_authenticated/servers/$id': typeof AuthenticatedServersIdRoute
+  '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
+  '/api/ai/configure': typeof ApiAiConfigureRoute
+  '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/zip': typeof ApiAiZipRoute
+  '/api/tools/curl': typeof ApiToolsCurlRoute
+  '/api/public/p/$slug': typeof ApiPublicPSlugRoute
+  '/api/public/s/$slug': typeof ApiPublicSSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/ai-zip'
+    | '/curl-tester'
+    | '/dashboard'
+    | '/serverlogs/$id'
+    | '/servers/$id'
+    | '/api/ai/auto-configure'
+    | '/api/ai/configure'
+    | '/api/ai/fix-curl'
+    | '/api/ai/zip'
+    | '/api/tools/curl'
+    | '/api/public/p/$slug'
+    | '/api/public/s/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/login'
+    | '/ai-zip'
+    | '/curl-tester'
+    | '/dashboard'
+    | '/serverlogs/$id'
+    | '/servers/$id'
+    | '/api/ai/auto-configure'
+    | '/api/ai/configure'
+    | '/api/ai/fix-curl'
+    | '/api/ai/zip'
+    | '/api/tools/curl'
+    | '/api/public/p/$slug'
+    | '/api/public/s/$slug'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/login'
+    | '/_authenticated/ai-zip'
+    | '/_authenticated/curl-tester'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/serverlogs/$id'
+    | '/_authenticated/servers/$id'
+    | '/api/ai/auto-configure'
+    | '/api/ai/configure'
+    | '/api/ai/fix-curl'
+    | '/api/ai/zip'
+    | '/api/tools/curl'
+    | '/api/public/p/$slug'
+    | '/api/public/s/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  LoginRoute: typeof LoginRoute
+  ApiAiAutoConfigureRoute: typeof ApiAiAutoConfigureRoute
+  ApiAiConfigureRoute: typeof ApiAiConfigureRoute
+  ApiAiFixCurlRoute: typeof ApiAiFixCurlRoute
+  ApiAiZipRoute: typeof ApiAiZipRoute
+  ApiToolsCurlRoute: typeof ApiToolsCurlRoute
+  ApiPublicPSlugRoute: typeof ApiPublicPSlugRoute
+  ApiPublicSSlugRoute: typeof ApiPublicSSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +239,124 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/curl-tester': {
+      id: '/_authenticated/curl-tester'
+      path: '/curl-tester'
+      fullPath: '/curl-tester'
+      preLoaderRoute: typeof AuthenticatedCurlTesterRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-zip': {
+      id: '/_authenticated/ai-zip'
+      path: '/ai-zip'
+      fullPath: '/ai-zip'
+      preLoaderRoute: typeof AuthenticatedAiZipRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/tools/curl': {
+      id: '/api/tools/curl'
+      path: '/api/tools/curl'
+      fullPath: '/api/tools/curl'
+      preLoaderRoute: typeof ApiToolsCurlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/zip': {
+      id: '/api/ai/zip'
+      path: '/api/ai/zip'
+      fullPath: '/api/ai/zip'
+      preLoaderRoute: typeof ApiAiZipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/fix-curl': {
+      id: '/api/ai/fix-curl'
+      path: '/api/ai/fix-curl'
+      fullPath: '/api/ai/fix-curl'
+      preLoaderRoute: typeof ApiAiFixCurlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/configure': {
+      id: '/api/ai/configure'
+      path: '/api/ai/configure'
+      fullPath: '/api/ai/configure'
+      preLoaderRoute: typeof ApiAiConfigureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/auto-configure': {
+      id: '/api/ai/auto-configure'
+      path: '/api/ai/auto-configure'
+      fullPath: '/api/ai/auto-configure'
+      preLoaderRoute: typeof ApiAiAutoConfigureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/servers/$id': {
+      id: '/_authenticated/servers/$id'
+      path: '/servers/$id'
+      fullPath: '/servers/$id'
+      preLoaderRoute: typeof AuthenticatedServersIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/serverlogs/$id': {
+      id: '/_authenticated/serverlogs/$id'
+      path: '/serverlogs/$id'
+      fullPath: '/serverlogs/$id'
+      preLoaderRoute: typeof AuthenticatedServerlogsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/public/s/$slug': {
+      id: '/api/public/s/$slug'
+      path: '/api/public/s/$slug'
+      fullPath: '/api/public/s/$slug'
+      preLoaderRoute: typeof ApiPublicSSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/p/$slug': {
+      id: '/api/public/p/$slug'
+      path: '/api/public/p/$slug'
+      fullPath: '/api/public/p/$slug'
+      preLoaderRoute: typeof ApiPublicPSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedAiZipRoute: typeof AuthenticatedAiZipRoute
+  AuthenticatedCurlTesterRoute: typeof AuthenticatedCurlTesterRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedServerlogsIdRoute: typeof AuthenticatedServerlogsIdRoute
+  AuthenticatedServersIdRoute: typeof AuthenticatedServersIdRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAiZipRoute: AuthenticatedAiZipRoute,
+  AuthenticatedCurlTesterRoute: AuthenticatedCurlTesterRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedServerlogsIdRoute: AuthenticatedServerlogsIdRoute,
+  AuthenticatedServersIdRoute: AuthenticatedServersIdRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  LoginRoute: LoginRoute,
+  ApiAiAutoConfigureRoute: ApiAiAutoConfigureRoute,
+  ApiAiConfigureRoute: ApiAiConfigureRoute,
+  ApiAiFixCurlRoute: ApiAiFixCurlRoute,
+  ApiAiZipRoute: ApiAiZipRoute,
+  ApiToolsCurlRoute: ApiToolsCurlRoute,
+  ApiPublicPSlugRoute: ApiPublicPSlugRoute,
+  ApiPublicSSlugRoute: ApiPublicSSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
