@@ -7,6 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 
@@ -72,14 +73,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Endpointly — Crie servidores de API em segundos" },
+      { name: "description", content: "Crie endpoints HTTP públicos com proxy real, autenticação, rate limit, logs e Modo IA. Conecte seu bot ou app." },
+      { property: "og:title", content: "Endpointly — Crie servidores de API em segundos" },
+      { property: "og:description", content: "Crie endpoints HTTP públicos com proxy real, autenticação, rate limit, logs e Modo IA. Conecte seu bot ou app." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Endpointly — Crie servidores de API em segundos" },
+      { name: "twitter:description", content: "Crie endpoints HTTP públicos com proxy real, autenticação, rate limit, logs e Modo IA. Conecte seu bot ou app." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d60441b1-a256-44cd-b473-e1f5eed85603/id-preview-ae2bdf1a--31d0a577-98dc-46c2-8776-7b9e58561d25.lovable.app-1778285749338.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d60441b1-a256-44cd-b473-e1f5eed85603/id-preview-ae2bdf1a--31d0a577-98dc-46c2-8776-7b9e58561d25.lovable.app-1778285749338.png" },
     ],
     links: [
       {
@@ -114,6 +118,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
+      <Toaster theme="dark" position="top-right" richColors />
     </QueryClientProvider>
   );
 }
