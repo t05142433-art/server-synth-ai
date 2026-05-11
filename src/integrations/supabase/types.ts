@@ -14,7 +14,271 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      endpoints: {
+        Row: {
+          action_key: string | null
+          body_template: string | null
+          created_at: string
+          description: string | null
+          extract_token_path: string | null
+          extract_token_prefix: string | null
+          extract_token_var: string | null
+          forward_body: boolean
+          forward_query: boolean
+          headers: Json
+          id: string
+          method: string
+          name: string
+          server_id: string
+          sort_order: number
+          target_url: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action_key?: string | null
+          body_template?: string | null
+          created_at?: string
+          description?: string | null
+          extract_token_path?: string | null
+          extract_token_prefix?: string | null
+          extract_token_var?: string | null
+          forward_body?: boolean
+          forward_query?: boolean
+          headers?: Json
+          id?: string
+          method?: string
+          name?: string
+          server_id: string
+          sort_order?: number
+          target_url?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action_key?: string | null
+          body_template?: string | null
+          created_at?: string
+          description?: string | null
+          extract_token_path?: string | null
+          extract_token_prefix?: string | null
+          extract_token_var?: string | null
+          forward_body?: boolean
+          forward_query?: boolean
+          headers?: Json
+          id?: string
+          method?: string
+          name?: string
+          server_id?: string
+          sort_order?: number
+          target_url?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "endpoints_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pages: {
+        Row: {
+          created_at: string
+          description: string | null
+          html: string
+          id: string
+          server_id: string | null
+          slug: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          html?: string
+          id?: string
+          server_id?: string | null
+          slug: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          html?: string
+          id?: string
+          server_id?: string | null
+          slug?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      request_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          id: string
+          ip: string | null
+          method: string | null
+          path: string | null
+          request_body: string | null
+          response_body: string | null
+          server_id: string
+          status: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          ip?: string | null
+          method?: string | null
+          path?: string | null
+          request_body?: string | null
+          response_body?: string | null
+          server_id: string
+          status?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          ip?: string | null
+          method?: string | null
+          path?: string | null
+          request_body?: string | null
+          response_body?: string | null
+          server_id?: string
+          status?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_logs_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      servers: {
+        Row: {
+          ai_prompt: string | null
+          api_key: string | null
+          banned_ips: string[]
+          body_template: string | null
+          created_at: string
+          description: string | null
+          enabled: boolean
+          extract_regex: string | null
+          forward_body: boolean
+          forward_query: boolean
+          headers: Json
+          id: string
+          logo_url: string | null
+          maintenance_message: string | null
+          maintenance_mode: boolean
+          method: string
+          name: string
+          rate_limit_per_min: number
+          require_api_key: boolean
+          slug: string
+          target_url: string
+          updated_at: string
+          user_id: string
+          variables: Json
+        }
+        Insert: {
+          ai_prompt?: string | null
+          api_key?: string | null
+          banned_ips?: string[]
+          body_template?: string | null
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          extract_regex?: string | null
+          forward_body?: boolean
+          forward_query?: boolean
+          headers?: Json
+          id?: string
+          logo_url?: string | null
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
+          method?: string
+          name: string
+          rate_limit_per_min?: number
+          require_api_key?: boolean
+          slug: string
+          target_url?: string
+          updated_at?: string
+          user_id: string
+          variables?: Json
+        }
+        Update: {
+          ai_prompt?: string | null
+          api_key?: string | null
+          banned_ips?: string[]
+          body_template?: string | null
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          extract_regex?: string | null
+          forward_body?: boolean
+          forward_query?: boolean
+          headers?: Json
+          id?: string
+          logo_url?: string | null
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
+          method?: string
+          name?: string
+          rate_limit_per_min?: number
+          require_api_key?: boolean
+          slug?: string
+          target_url?: string
+          updated_at?: string
+          user_id?: string
+          variables?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
