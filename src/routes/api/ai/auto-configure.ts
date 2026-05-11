@@ -184,9 +184,23 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               let html: string | null = null;
               if (generate_html) {
                 log(`\n🎨 IA gerando página HTML para a API…`, "ai");
+                const htmlSys = `Você gera UMA página HTML COMPLETA (Tailwind via CDN), moderna e bonita, em pt-BR, que serve de PAINEL FUNCIONAL para uma API real.
+
+REGRAS CRÍTICAS — LEIA COM ATENÇÃO:
+1. A API JÁ ESTÁ HOSPEDADA. Você NÃO chama as URLs originais (Instagram, etc.) diretamente do navegador — isso quebra por CORS. Você chama SEMPRE o backend-proxy desta plataforma, que é UMA ÚNICA URL chamada __SERVER_BASE__ (placeholder literal — NÃO substitua, NÃO escreva URL real). Será substituído pelo backend real, no formato "/api/public/s/<slug>".
+2. Cada botão "Testar" / formulário deve fazer fetch para __SERVER_BASE__ com method POST, header "Content-Type: application/json", e body JSON contendo:
+     { "action": "<action_key do endpoint>", ...campos do usuário }
+   O backend faz o forward real para o serviço externo, devolve a resposta de verdade. NUNCA simule respostas, NUNCA use Math.random ou setTimeout para fingir loading.
+3. Para cada endpoint da lista, gere um cartão com: nome, descrição, método+URL original (só informativo), e um formulário com inputs para as variáveis {{VAR}} usadas (use placeholders sugestivos). Botão "Executar" dispara o fetch acima e exibe a resposta crua (status + body) numa <pre> visível.
+4. NUNCA escreva "exemplo de resposta", "mock", "dados simulados", "lorem ipsum". É um painel de produção, conectado a backend real.
+5. NUNCA exponha tokens/cookies/headers privados — o backend já gerencia variáveis. Só mostre os campos que o usuário precisa preencher (ex: id, username, mensagem). Se um endpoint não tem inputs do usuário, só mostre o botão "Executar".
+6. Mostre também o cURL de exemplo para chamar o backend (não o original), tipo:
+     curl -X POST "<origem>__SERVER_BASE__" -H "Content-Type: application/json" -d '{"action":"<key>", ...}'
+   (Use literalmente __SERVER_BASE__ — não invente URL.)
+7. Devolva APENAS o HTML cru, sem markdown, sem \`\`\`, sem comentários fora dele. Deve abrir com <!doctype html>.`;
                 const htmlRaw = await callAi([
-                  { role: "system", content: `Gere uma página HTML COMPLETA, moderna e bonita (Tailwind via CDN), em pt-BR, documentando esta API. Inclua: hero, lista de endpoints com método+URL+exemplo curl, e um botão "Testar" que faz fetch e mostra resposta. Devolva APENAS o HTML cru, sem markdown.` },
-                  { role: "user", content: JSON.stringify({ server: plan.server, endpoints: finalEndpoints, instructions }) },
+                  { role: "system", content: htmlSys },
+                  { role: "user", content: JSON.stringify({ server: plan.server, endpoints: finalEndpoints.map((e: any) => ({ name: e.name, description: e.description, action_key: e.action_key, method: e.method, url: e.url, headers_keys: Object.keys(e.headers || {}), body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null, variables_used: Object.keys(plan.server?.variables || {}) })), instructions }) },
                 ], false);
                 html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
                 log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
