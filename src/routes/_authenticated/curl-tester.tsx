@@ -141,9 +141,14 @@ function CurlTester() {
       let pageSlug: string | undefined;
       if (html) {
         pageSlug = slugify();
+        // Substitute the __SERVER_BASE__ placeholder with the REAL backend proxy URL
+        // so the generated HTML's Test buttons hit our backend (which forwards to upstream),
+        // not the upstream service directly (which would fail CORS).
+        const serverBase = `/api/public/s/${slug}`;
+        const htmlWired = html.replaceAll("__SERVER_BASE__", serverBase);
         const { error: pErr } = await supabase.from("pages").insert({
           user_id: u.user.id, server_id: serverId, slug: pageSlug,
-          title: plan.server.name, description: plan.server.description, html,
+          title: plan.server.name, description: plan.server.description, html: htmlWired,
         });
         if (pErr) throw pErr;
       }
