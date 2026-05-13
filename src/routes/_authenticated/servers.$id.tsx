@@ -15,6 +15,7 @@ type ServerFull = {
   maintenance_mode: boolean; maintenance_message: string | null;
   banned_ips: string[];
 };
+type PageRow = { id: string; slug: string; title: string; maintenance_mode: boolean; maintenance_message: string | null };
 type Endpoint = {
   id: string; server_id: string; user_id: string;
   action_key: string | null; name: string; description: string | null;
@@ -32,6 +33,7 @@ function ConfigureServer() {
   const navigate = useNavigate();
   const [s, setS] = useState<ServerFull | null>(null);
   const [eps, setEps] = useState<Endpoint[]>([]);
+  const [pages, setPages] = useState<PageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [varPairs, setVarPairs] = useState<{ k: string; v: string }[]>([]);
@@ -40,15 +42,17 @@ function ConfigureServer() {
   const [testBodies, setTestBodies] = useState<Record<string, string>>({});
 
   const reload = async () => {
-    const [{ data: srv }, { data: e }] = await Promise.all([
+    const [{ data: srv }, { data: e }, { data: p }] = await Promise.all([
       supabase.from("servers").select("*").eq("id", id).maybeSingle(),
       supabase.from("endpoints").select("*").eq("server_id", id).order("sort_order"),
+      supabase.from("pages").select("id,slug,title,maintenance_mode,maintenance_message").eq("server_id", id),
     ]);
     if (!srv) { toast.error("Servidor não encontrado"); navigate({ to: "/dashboard" }); return; }
     const row = srv as any as ServerFull;
     setS(row);
     setVarPairs(Object.entries(row.variables ?? {}).map(([k, v]) => ({ k, v: String(v) })));
     setEps((e ?? []) as any);
+    setPages((p ?? []) as any);
     setLoading(false);
   };
   useEffect(() => { reload(); }, [id]);
@@ -351,6 +355,38 @@ function ConfigureServer() {
           />
         </div>
       </section>
+
+      {/* Páginas HTML públicas — modo manutenção */}
+      {pages.length > 0 && (
+        <section className="mt-2 mb-12">
+          <h2 className="font-semibold mb-3 flex items-center gap-2"><Wrench className="size-4" /> Páginas HTML ({pages.length})</h2>
+          <div className="space-y-3">
+            {pages.map((pg, idx) => (
+              <div key={pg.id} className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <code className="font-mono text-xs bg-muted rounded px-2 py-1 truncate flex-1">{typeof window !== "undefined" ? window.location.origin : ""}/api/public/p/{pg.slug}</code>
+                  <a href={`/api/public/p/${pg.slug}`} target="_blank" rel="noreferrer" className="rounded-md bg-primary text-primary-foreground px-2 py-1 text-xs">Abrir</a>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={pg.maintenance_mode} onChange={(e) => {
+                    const next = [...pages]; next[idx] = { ...pg, maintenance_mode: e.target.checked }; setPages(next);
+                  }} />
+                  Modo manutenção (página HTML retorna 503)
+                </label>
+                <textarea value={pg.maintenance_message ?? ""} onChange={(e) => {
+                  const next = [...pages]; next[idx] = { ...pg, maintenance_message: e.target.value }; setPages(next);
+                }} rows={2} placeholder="Mensagem de manutenção..." className={inputCls + " text-sm"} />
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    const { error } = await supabase.from("pages").update({ maintenance_mode: pg.maintenance_mode, maintenance_message: pg.maintenance_message }).eq("id", pg.id);
+                    if (error) toast.error(error.message); else toast.success("Página atualizada!");
+                  }} className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm font-semibold inline-flex items-center gap-1"><Save className="size-4" /> Salvar página</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
