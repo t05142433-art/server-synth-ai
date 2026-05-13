@@ -208,9 +208,18 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               let html: string | null = null;
               if (generate_html) {
                 log(`\n🎨 IA gerando página HTML para a API…`, "ai");
-                const htmlSys = `Você gera UMA página HTML COMPLETA (Tailwind via CDN), moderna, bonita, com efeitos 3D/glassmorphism quando o usuário pedir, em pt-BR. É um PAINEL DE PRODUÇÃO conectado a uma API real.
+                const htmlSys = `Você gera UMA landing-page/painel SaaS HTML COMPLETO, NÍVEL AWWWARDS, em pt-BR. Tailwind via CDN. Tema dark. Tem que parecer um produto premium real (estilo Linear, Vercel, Framer, Stripe), NÃO um formulário cru.
 
-REGRAS ABSOLUTAS — LEIA TUDO:
+ESTÉTICA OBRIGATÓRIA (3D / SaaS premium):
+ - Hero gigante: headline em gradient text com 3-4 cores, subtítulo, badge "API ativa" pulsando, 2-3 stats fake-ok (latência, requests, uptime).
+ - Background animado: 3+ blobs (radial-gradient + filter:blur(80px)) flutuando com @keyframes float, ou aurora/mesh gradient.
+ - Glassmorphism real: backdrop-filter: blur(20px), borda 1px rgba(255,255,255,.10), shadow profunda multi-layer.
+ - Cards com tilt 3D no mousemove (perspective(1400px) rotateX/rotateY) + glow no hover.
+ - Botões: gradient + box-shadow glow colorida + hover translateY(-2px) scale(1.02).
+ - Tipografia bold tracking-tight nos títulos. Generous spacing (py-20+). Seções: Hero → Como funciona (3 steps com emoji) → Endpoints → Footer.
+ - Terminal log preto com cores (ok=verde, err=vermelho, info=azul, warn=amarelo) mostrando cada request real ao vivo.
+
+REGRAS ABSOLUTAS DE CONEXÃO — LEIA TUDO:
 
 1. URL DO BACKEND
    - Toda chamada vai para a string LITERAL __SERVER_BASE__ (não substitua, não invente URL). O backend substitui depois pelo proxy real "/api/public/s/<slug>".
@@ -232,8 +241,9 @@ REGRAS ABSOLUTAS — LEIA TUDO:
    - Mostre status HTTP e body cru (formatado se JSON) num <pre> visível depois de cada execução.
 
 5. UI
-   - Para cada endpoint no array, gere um cartão com: nome, descrição, badge método+URL original (apenas informativo, em <code>), formulário com os user_inputs e botão "Executar".
-   - Use Tailwind via <script src="https://cdn.tailwindcss.com"></script>. Use gradientes, sombras, transform 3D quando o usuário pedir "bonito/3D". Dark theme por padrão.
+   - Se houver fluxo encadeado óbvio (extrair id → enviar comentário/msg N vezes), gere UM cartão principal unificado: input do link, input da mensagem, qty, delay (ms), botão "🚀 Disparar". Loop em JS chamando o endpoint final N vezes com contadores ao vivo (enviados/sucesso/falha). Endpoints individuais ficam numa seção "Avançado" recolhível.
+   - Senão: 1 cartão por endpoint com nome, descrição, badge método+URL original (informativo, <code>), formulário com user_inputs, botão "Executar".
+   - <script src="https://cdn.tailwindcss.com"></script> no <head>.
    - Mostre também um bloco "cURL para devs": curl -X POST "<origem>__SERVER_BASE__" -H "Content-Type: application/json" -d '{"action":"<key>","campo":"valor"}'
 
 6. SAÍDA
