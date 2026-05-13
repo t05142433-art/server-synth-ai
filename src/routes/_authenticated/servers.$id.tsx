@@ -21,6 +21,7 @@ type Endpoint = {
   method: string; target_url: string; headers: Record<string, string>;
   body_template: string | null; forward_query: boolean; forward_body: boolean;
   extract_token_path: string | null; extract_token_var: string | null; extract_token_prefix: string | null;
+  extract_regex: string | null; chain_to_action: string | null;
   sort_order: number;
 };
 
@@ -95,6 +96,8 @@ function ConfigureServer() {
       extract_token_path: ep.extract_token_path || null,
       extract_token_var: ep.extract_token_var || null,
       extract_token_prefix: ep.extract_token_prefix || null,
+      extract_regex: ep.extract_regex || null,
+      chain_to_action: ep.chain_to_action || null,
       updated_at: new Date().toISOString(),
     }).eq("id", ep.id);
     if (error) toast.error(error.message); else toast.success("Endpoint salvo!");
