@@ -213,15 +213,47 @@ async function handle(slug: string, request: Request) {
     }
   }
 
-  // If server has extract_regex (saved from cURL with pipes like grep), apply it and return only the captured value as JSON
-  if (server.extract_regex && upstreamStatus < 400) {
+  // Per-endpoint extract_regex (preferred), falls back to server-level regex.
+  // When matched, returns { ok, value, status } so HTML / next-step can read .value.
+  const regexStr: string | null = (ep as any).extract_regex || server.extract_regex || null;
+  let extractedValue: string | null = null;
+  if (regexStr && upstreamStatus < 400) {
     try {
-      const m = upstreamText.match(new RegExp(server.extract_regex));
-      const value = m ? (m[1] ?? m[0]) : null;
-      const out = JSON.stringify({ ok: true, value, status: upstreamStatus });
-      await log(server, request, ip, incomingBody, out, upstreamStatus, Date.now() - start);
-      return new Response(out, { status: 200, headers: { "content-type": "application/json", ...CORS_HEADERS } });
+      const m = upstreamText.match(new RegExp(regexStr));
+      extractedValue = m ? (m[1] ?? m[0]) : null;
     } catch {}
+  }
+
+  // Auto-chain: if this endpoint has chain_to_action, immediately call that endpoint
+  // forwarding extracted value + remaining vars. Returns combined result.
+  const chainTo: string | null = (ep as any).chain_to_action || null;
+  if (chainTo && extractedValue != null) {
+    const nextEp: any = eps.find((e) => e.action_key === chainTo);
+    if (nextEp) {
+      const chainVars: Record<string, string> = { ...vars, ID: extractedValue, VALUE: extractedValue, EXTRACTED: extractedValue };
+      let nextTarget = tpl(nextEp.target_url, chainVars).replace(/:id/g, encodeURIComponent(extractedValue));
+      const nextHeaders = tplObj((nextEp.headers as Record<string, string>) || {}, chainVars);
+      let nextBody: string | undefined;
+      if (nextEp.body_template) nextBody = tpl(nextEp.body_template, chainVars);
+      if (nextBody && !nextHeaders["Content-Type"] && !nextHeaders["content-type"]) nextHeaders["Content-Type"] = "application/json";
+      try {
+        const r2 = await fetch(nextTarget, { method: nextEp.method, headers: nextHeaders, body: nextBody, redirect: "follow" });
+        const t2 = await r2.text();
+        const combined = JSON.stringify({ ok: r2.ok, extracted: extractedValue, chained_action: chainTo, chained_status: r2.status, chained_response: t2.slice(0, 4000) });
+        await log(server, request, ip, incomingBody, combined, r2.status, Date.now() - start);
+        return new Response(combined, { status: r2.status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
+      } catch (e: any) {
+        const errOut = JSON.stringify({ ok: false, extracted: extractedValue, chain_error: e?.message || String(e) });
+        await log(server, request, ip, incomingBody, errOut, 502, Date.now() - start);
+        return new Response(errOut, { status: 502, headers: { "content-type": "application/json", ...CORS_HEADERS } });
+      }
+    }
+  }
+
+  if (extractedValue != null) {
+    const out = JSON.stringify({ ok: true, value: extractedValue, status: upstreamStatus });
+    await log(server, request, ip, incomingBody, out, upstreamStatus, Date.now() - start);
+    return new Response(out, { status: 200, headers: { "content-type": "application/json", ...CORS_HEADERS } });
   }
 
   await log(server, request, ip, incomingBody, upstreamText, upstreamStatus, Date.now() - start);

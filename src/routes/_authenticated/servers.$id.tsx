@@ -15,12 +15,14 @@ type ServerFull = {
   maintenance_mode: boolean; maintenance_message: string | null;
   banned_ips: string[];
 };
+type PageRow = { id: string; slug: string; title: string; maintenance_mode: boolean; maintenance_message: string | null };
 type Endpoint = {
   id: string; server_id: string; user_id: string;
   action_key: string | null; name: string; description: string | null;
   method: string; target_url: string; headers: Record<string, string>;
   body_template: string | null; forward_query: boolean; forward_body: boolean;
   extract_token_path: string | null; extract_token_var: string | null; extract_token_prefix: string | null;
+  extract_regex: string | null; chain_to_action: string | null;
   sort_order: number;
 };
 
@@ -31,6 +33,7 @@ function ConfigureServer() {
   const navigate = useNavigate();
   const [s, setS] = useState<ServerFull | null>(null);
   const [eps, setEps] = useState<Endpoint[]>([]);
+  const [pages, setPages] = useState<PageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [varPairs, setVarPairs] = useState<{ k: string; v: string }[]>([]);
@@ -39,15 +42,17 @@ function ConfigureServer() {
   const [testBodies, setTestBodies] = useState<Record<string, string>>({});
 
   const reload = async () => {
-    const [{ data: srv }, { data: e }] = await Promise.all([
+    const [{ data: srv }, { data: e }, { data: p }] = await Promise.all([
       supabase.from("servers").select("*").eq("id", id).maybeSingle(),
       supabase.from("endpoints").select("*").eq("server_id", id).order("sort_order"),
+      supabase.from("pages").select("id,slug,title,maintenance_mode,maintenance_message").eq("server_id", id),
     ]);
     if (!srv) { toast.error("Servidor não encontrado"); navigate({ to: "/dashboard" }); return; }
     const row = srv as any as ServerFull;
     setS(row);
     setVarPairs(Object.entries(row.variables ?? {}).map(([k, v]) => ({ k, v: String(v) })));
     setEps((e ?? []) as any);
+    setPages((p ?? []) as any);
     setLoading(false);
   };
   useEffect(() => { reload(); }, [id]);
@@ -95,6 +100,8 @@ function ConfigureServer() {
       extract_token_path: ep.extract_token_path || null,
       extract_token_var: ep.extract_token_var || null,
       extract_token_prefix: ep.extract_token_prefix || null,
+      extract_regex: ep.extract_regex || null,
+      chain_to_action: ep.chain_to_action || null,
       updated_at: new Date().toISOString(),
     }).eq("id", ep.id);
     if (error) toast.error(error.message); else toast.success("Endpoint salvo!");
@@ -251,6 +258,13 @@ function ConfigureServer() {
                     <input value={ep.extract_token_prefix ?? ""} onChange={(e) => updEp(ep.id, { extract_token_prefix: e.target.value })} placeholder='Prefixo opcional (ex: "Bearer ")' className={inputCls + " font-mono text-xs col-span-3"} />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-3">
+                    <div className="col-span-2 text-xs font-medium">🪄 Regex + Encadeamento automático</div>
+                    <input value={ep.extract_regex ?? ""} onChange={(e) => updEp(ep.id, { extract_regex: e.target.value })} placeholder="extract_regex (ex: instagram://media\?id=([0-9]+))" className={inputCls + " font-mono text-xs col-span-2"} />
+                    <input value={ep.chain_to_action ?? ""} onChange={(e) => updEp(ep.id, { chain_to_action: e.target.value })} placeholder="Após extrair, chamar action_key… (ex: send_msg)" className={inputCls + " font-mono text-xs col-span-2"} />
+                    <p className="col-span-2 text-[11px] text-muted-foreground">Se preenchido, o backend extrai o valor da resposta e automaticamente chama o próximo endpoint passando-o como {"{{ID}}"} / {"{{VALUE}}"} no body_template/headers/url do endpoint encadeado.</p>
+                  </div>
+
                   <div className="flex gap-4 text-xs">
                     <label className="inline-flex items-center gap-1"><input type="checkbox" checked={ep.forward_query} onChange={(e) => updEp(ep.id, { forward_query: e.target.checked })} /> Encaminhar query</label>
                     <label className="inline-flex items-center gap-1"><input type="checkbox" checked={ep.forward_body} onChange={(e) => updEp(ep.id, { forward_body: e.target.checked })} /> Encaminhar body</label>
@@ -341,6 +355,38 @@ function ConfigureServer() {
           />
         </div>
       </section>
+
+      {/* Páginas HTML públicas — modo manutenção */}
+      {pages.length > 0 && (
+        <section className="mt-2 mb-12">
+          <h2 className="font-semibold mb-3 flex items-center gap-2"><Wrench className="size-4" /> Páginas HTML ({pages.length})</h2>
+          <div className="space-y-3">
+            {pages.map((pg, idx) => (
+              <div key={pg.id} className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <code className="font-mono text-xs bg-muted rounded px-2 py-1 truncate flex-1">{typeof window !== "undefined" ? window.location.origin : ""}/api/public/p/{pg.slug}</code>
+                  <a href={`/api/public/p/${pg.slug}`} target="_blank" rel="noreferrer" className="rounded-md bg-primary text-primary-foreground px-2 py-1 text-xs">Abrir</a>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={pg.maintenance_mode} onChange={(e) => {
+                    const next = [...pages]; next[idx] = { ...pg, maintenance_mode: e.target.checked }; setPages(next);
+                  }} />
+                  Modo manutenção (página HTML retorna 503)
+                </label>
+                <textarea value={pg.maintenance_message ?? ""} onChange={(e) => {
+                  const next = [...pages]; next[idx] = { ...pg, maintenance_message: e.target.value }; setPages(next);
+                }} rows={2} placeholder="Mensagem de manutenção..." className={inputCls + " text-sm"} />
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    const { error } = await supabase.from("pages").update({ maintenance_mode: pg.maintenance_mode, maintenance_message: pg.maintenance_message }).eq("id", pg.id);
+                    if (error) toast.error(error.message); else toast.success("Página atualizada!");
+                  }} className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm font-semibold inline-flex items-center gap-1"><Save className="size-4" /> Salvar página</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

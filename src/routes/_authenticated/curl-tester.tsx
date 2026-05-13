@@ -134,6 +134,8 @@ function CurlTester() {
         description: ep.description || null, method: ep.method || "GET", target_url: ep.url || "",
         headers: ep.headers || {}, body_template: ep.body || null,
         forward_query: false, forward_body: false, sort_order: base + i,
+        extract_regex: ep.extract_regex || null,
+        chain_to_action: ep.chain_to_action || null,
       }));
       const { error: epErr } = await supabase.from("endpoints").insert(rows);
       if (epErr) throw epErr;
