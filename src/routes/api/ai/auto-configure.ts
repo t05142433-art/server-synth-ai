@@ -35,7 +35,7 @@ Devolva APENAS JSON válido neste schema:
       "extract_regex": "<regex JS com 1 grupo>" | null,
       "expected_contains": "<substring esperada na resposta>" | null,
       "chain_to_action": "<action_key de outro endpoint, se este só extrai algo e o próximo deve ser chamado automaticamente com o valor>" | null,
-      "user_inputs": [{ "key": "<NOME_MAIUSCULO>", "label": "<rótulo pt-BR>", "placeholder": "<exemplo>", "type": "text|textarea|url" }]
+      "user_inputs": [{ "key": "<NOME_MAIUSCULO>", "label": "<rótulo pt-BR>", "placeholder": "<exemplo>", "type": "text|textarea|url", "example": "<VALOR REAL DE TESTE — obrigatório, usado pra testar o endpoint agora>" }]
     }
   ],
   "notes": "<1-2 linhas em pt-BR explicando o que ajustou>"
@@ -48,6 +48,8 @@ REGRAS:
 - Cada cURL = 1 endpoint. action_key único.
 - Se o usuário deu logs/output esperado, configure expected_contains com algo único do output.
 - Quando o body precisa de dados que o usuário fornece (id, mensagem, username, etc.), use placeholders {{NOME}} no body, na URL e nos headers — o backend substitui em tempo real. Liste esses campos em "user_inputs".
+- TODO user_input PRECISA ter "example" com um VALOR REAL FUNCIONAL (não placeholder genérico) — vamos usar pra testar o endpoint agora. Se o usuário mandou um link/id/etc no cURL ou nas instruções, REUTILIZE esses valores. Se não mandou, use um valor público real conhecido (ex: pro Instagram, https://www.instagram.com/p/DYKEoJYAR7j/).
+- Placeholders {{NOME}} podem aparecer em url, headers E body — todos serão substituídos no teste pelos "example" e em produção pelos inputs reais do usuário.
 - Se o usuário descreve um fluxo encadeado (ex: "extrair id do reel e usar pra enviar msg"), marque o endpoint que extrai com extract_regex e chain_to_action apontando para o action_key do endpoint de envio. O backend chama os dois automaticamente com 1 só request.
 - Sem markdown, sem comentários, só JSON.`;
 
@@ -81,10 +83,19 @@ async function execEndpoint(ep: any) {
   const start = Date.now();
   try {
     const method = String(ep.method || "GET").toUpperCase();
-    const r = await fetch(ep.url, {
+    const subs: Record<string, string> = {};
+    for (const ui of (ep.user_inputs || [])) {
+      if (ui?.key && ui?.example != null) subs[String(ui.key)] = String(ui.example);
+    }
+    const sub = (s: any) => typeof s === "string" ? s.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_, k) => subs[k] ?? `{{${k}}}`) : s;
+    const url = sub(ep.url);
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(ep.headers || {})) headers[k] = sub(v);
+    const body = ep.body == null ? undefined : sub(ep.body);
+    const r = await fetch(url, {
       method,
-      headers: ep.headers || {},
-      body: ["GET", "HEAD"].includes(method) ? undefined : (ep.body ?? undefined),
+      headers,
+      body: ["GET", "HEAD"].includes(method) ? undefined : body,
       redirect: "follow",
     });
     const text = await r.text();
@@ -95,7 +106,7 @@ async function execEndpoint(ep: any) {
       try { const m = text.match(new RegExp(ep.extract_regex)); extracted = m ? (m[1] ?? m[0]) : null; } catch {}
     }
     return {
-      ok: r.ok, status: r.status, statusText: r.statusText, headers: respHeaders,
+      ok: r.ok, status: r.status, statusText: r.statusText, headers: respHeaders, resolved_url: url,
       body: text.slice(0, 8000), size: text.length, extracted, duration_ms: Date.now() - start,
     };
   } catch (e: any) {
@@ -148,7 +159,15 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                 let ep = plan.endpoints[i];
                 log(`\n━━━ Endpoint ${i + 1}/${plan.endpoints.length}: ${ep.name} (${ep.method} ${ep.url})`, "info");
 
-                if (!safeUrl(ep.url)) { log(`✗ URL bloqueada/inválida: ${ep.url}`, "err"); finalEndpoints.push({ ...ep, _failed: "url" }); continue; }
+                // resolve placeholders for safety check using example values
+                const _subs: Record<string, string> = {};
+                for (const ui of (ep.user_inputs || [])) if (ui?.key && ui?.example != null) _subs[String(ui.key)] = String(ui.example);
+                const _resolvedUrl = String(ep.url || "").replace(/\{\{([A-Z0-9_]+)\}\}/g, (_: string, k: string) => _subs[k] ?? "");
+                if (!safeUrl(_resolvedUrl)) {
+                  log(`✗ URL bloqueada/inválida: ${ep.url}${_resolvedUrl !== ep.url ? ` → ${_resolvedUrl}` : ""}`, "err");
+                  finalEndpoints.push({ ...ep, _failed: "url" });
+                  continue;
+                }
 
                 const attempts: any[] = [];
                 let success = false;
@@ -156,6 +175,7 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                 for (let attempt = 1; attempt <= max_retries + 1; attempt++) {
                   log(`$ curl -X ${ep.method} "${ep.url}"`, "info");
                   const exec = await execEndpoint(ep);
+                  if ((exec as any).resolved_url && (exec as any).resolved_url !== ep.url) log(`  → ${(exec as any).resolved_url}`, "info");
                   if (exec.ok === false || exec.error) log(`✗ ERRO: ${exec.error || "rede"}`, "err");
                   else log(`← HTTP ${exec.status} ${exec.statusText} (${exec.duration_ms}ms, ${exec.size}b)`, (exec.status ?? 500) < 400 ? "ok" : "warn");
                   if (exec.extracted != null) log(`  extracted: ${String(exec.extracted).slice(0, 120)}`, "ok");
@@ -188,9 +208,18 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               let html: string | null = null;
               if (generate_html) {
                 log(`\n🎨 IA gerando página HTML para a API…`, "ai");
-                const htmlSys = `Você gera UMA página HTML COMPLETA (Tailwind via CDN), moderna, bonita, com efeitos 3D/glassmorphism quando o usuário pedir, em pt-BR. É um PAINEL DE PRODUÇÃO conectado a uma API real.
+                const htmlSys = `Você gera UMA landing-page/painel SaaS HTML COMPLETO, NÍVEL AWWWARDS, em pt-BR. Tailwind via CDN. Tema dark. Tem que parecer um produto premium real (estilo Linear, Vercel, Framer, Stripe), NÃO um formulário cru.
 
-REGRAS ABSOLUTAS — LEIA TUDO:
+ESTÉTICA OBRIGATÓRIA (3D / SaaS premium):
+ - Hero gigante: headline em gradient text com 3-4 cores, subtítulo, badge "API ativa" pulsando, 2-3 stats fake-ok (latência, requests, uptime).
+ - Background animado: 3+ blobs (radial-gradient + filter:blur(80px)) flutuando com @keyframes float, ou aurora/mesh gradient.
+ - Glassmorphism real: backdrop-filter: blur(20px), borda 1px rgba(255,255,255,.10), shadow profunda multi-layer.
+ - Cards com tilt 3D no mousemove (perspective(1400px) rotateX/rotateY) + glow no hover.
+ - Botões: gradient + box-shadow glow colorida + hover translateY(-2px) scale(1.02).
+ - Tipografia bold tracking-tight nos títulos. Generous spacing (py-20+). Seções: Hero → Como funciona (3 steps com emoji) → Endpoints → Footer.
+ - Terminal log preto com cores (ok=verde, err=vermelho, info=azul, warn=amarelo) mostrando cada request real ao vivo.
+
+REGRAS ABSOLUTAS DE CONEXÃO — LEIA TUDO:
 
 1. URL DO BACKEND
    - Toda chamada vai para a string LITERAL __SERVER_BASE__ (não substitua, não invente URL). O backend substitui depois pelo proxy real "/api/public/s/<slug>".
@@ -212,8 +241,9 @@ REGRAS ABSOLUTAS — LEIA TUDO:
    - Mostre status HTTP e body cru (formatado se JSON) num <pre> visível depois de cada execução.
 
 5. UI
-   - Para cada endpoint no array, gere um cartão com: nome, descrição, badge método+URL original (apenas informativo, em <code>), formulário com os user_inputs e botão "Executar".
-   - Use Tailwind via <script src="https://cdn.tailwindcss.com"></script>. Use gradientes, sombras, transform 3D quando o usuário pedir "bonito/3D". Dark theme por padrão.
+   - Se houver fluxo encadeado óbvio (extrair id → enviar comentário/msg N vezes), gere UM cartão principal unificado: input do link, input da mensagem, qty, delay (ms), botão "🚀 Disparar". Loop em JS chamando o endpoint final N vezes com contadores ao vivo (enviados/sucesso/falha). Endpoints individuais ficam numa seção "Avançado" recolhível.
+   - Senão: 1 cartão por endpoint com nome, descrição, badge método+URL original (informativo, <code>), formulário com user_inputs, botão "Executar".
+   - <script src="https://cdn.tailwindcss.com"></script> no <head>.
    - Mostre também um bloco "cURL para devs": curl -X POST "<origem>__SERVER_BASE__" -H "Content-Type: application/json" -d '{"action":"<key>","campo":"valor"}'
 
 6. SAÍDA
