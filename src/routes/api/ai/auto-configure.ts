@@ -31,9 +31,11 @@ Devolva APENAS JSON válido neste schema:
       "method": "GET|POST|PUT|PATCH|DELETE|HEAD",
       "url": "<URL absoluta>",
       "headers": { "<name>": "<value>", ... },
-      "body": "<string body>" | null,
+      "body": "<string body com placeholders {{NOME_MAIUSCULO}} para campos do usuário>" | null,
       "extract_regex": "<regex JS com 1 grupo>" | null,
-      "expected_contains": "<substring esperada na resposta>" | null
+      "expected_contains": "<substring esperada na resposta>" | null,
+      "chain_to_action": "<action_key de outro endpoint, se este só extrai algo e o próximo deve ser chamado automaticamente com o valor>" | null,
+      "user_inputs": [{ "key": "<NOME_MAIUSCULO>", "label": "<rótulo pt-BR>", "placeholder": "<exemplo>", "type": "text|textarea|url" }]
     }
   ],
   "notes": "<1-2 linhas em pt-BR explicando o que ajustou>"
@@ -45,6 +47,8 @@ REGRAS:
 - Pipes (| grep, | jq, | awk) viram extract_regex.
 - Cada cURL = 1 endpoint. action_key único.
 - Se o usuário deu logs/output esperado, configure expected_contains com algo único do output.
+- Quando o body precisa de dados que o usuário fornece (id, mensagem, username, etc.), use placeholders {{NOME}} no body, na URL e nos headers — o backend substitui em tempo real. Liste esses campos em "user_inputs".
+- Se o usuário descreve um fluxo encadeado (ex: "extrair id do reel e usar pra enviar msg"), marque o endpoint que extrai com extract_regex e chain_to_action apontando para o action_key do endpoint de envio. O backend chama os dois automaticamente com 1 só request.
 - Sem markdown, sem comentários, só JSON.`;
 
 const SYS_FIX = `Você é o mesmo engenheiro. Um endpoint falhou. Recebe:
@@ -112,7 +116,7 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: CORS }),
       POST: async ({ request }) => {
-        const { curls = [], instructions = "", expected_output = "", generate_html = false, max_retries = 3 } = await request.json();
+        const { curls = [], instructions = "", expected_output = "", generate_html = false, max_retries = 12 } = await request.json();
         if (!Array.isArray(curls) || curls.length === 0) return Response.json({ error: "Envie ao menos 1 cURL" }, { status: 400 });
 
         const enc = new TextEncoder();
@@ -164,9 +168,9 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                     success = true; break;
                   }
 
-                  if (attempt > max_retries) { log(`✗ Falhou após ${attempt} tentativas`, "err"); break; }
+                  if (attempt > max_retries) { log(`⚠ Limite de ${max_retries} tentativas atingido — salvando mesmo assim para você ajustar manualmente`, "warn"); break; }
 
-                  log(`🧠 IA analisando falha e ajustando…`, "ai");
+                  log(`🧠 IA analisando falha (tentativa ${attempt}/${max_retries}) e ajustando…`, "ai");
                   const fixRaw = await callAi([
                     { role: "system", content: SYS_FIX },
                     { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
@@ -184,23 +188,50 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               let html: string | null = null;
               if (generate_html) {
                 log(`\n🎨 IA gerando página HTML para a API…`, "ai");
-                const htmlSys = `Você gera UMA página HTML COMPLETA (Tailwind via CDN), moderna e bonita, em pt-BR, que serve de PAINEL FUNCIONAL para uma API real.
+                const htmlSys = `Você gera UMA página HTML COMPLETA (Tailwind via CDN), moderna, bonita, com efeitos 3D/glassmorphism quando o usuário pedir, em pt-BR. É um PAINEL DE PRODUÇÃO conectado a uma API real.
 
-REGRAS CRÍTICAS — LEIA COM ATENÇÃO:
-1. A API JÁ ESTÁ HOSPEDADA. Você NÃO chama as URLs originais (Instagram, etc.) diretamente do navegador — isso quebra por CORS. Você chama SEMPRE o backend-proxy desta plataforma, que é UMA ÚNICA URL chamada __SERVER_BASE__ (placeholder literal — NÃO substitua, NÃO escreva URL real). Será substituído pelo backend real, no formato "/api/public/s/<slug>".
-2. Cada botão "Testar" / formulário deve fazer fetch para __SERVER_BASE__ com method POST, header "Content-Type: application/json", e body JSON contendo:
-     { "action": "<action_key do endpoint>", ...campos do usuário }
-   O backend faz o forward real para o serviço externo, devolve a resposta de verdade. NUNCA simule respostas, NUNCA use Math.random ou setTimeout para fingir loading.
-3. Para cada endpoint da lista, gere um cartão com: nome, descrição, método+URL original (só informativo), e um formulário com inputs para as variáveis {{VAR}} usadas (use placeholders sugestivos). Botão "Executar" dispara o fetch acima e exibe a resposta crua (status + body) numa <pre> visível.
-4. NUNCA escreva "exemplo de resposta", "mock", "dados simulados", "lorem ipsum". É um painel de produção, conectado a backend real.
-5. NUNCA exponha tokens/cookies/headers privados — o backend já gerencia variáveis. Só mostre os campos que o usuário precisa preencher (ex: id, username, mensagem). Se um endpoint não tem inputs do usuário, só mostre o botão "Executar".
-6. Mostre também o cURL de exemplo para chamar o backend (não o original), tipo:
-     curl -X POST "<origem>__SERVER_BASE__" -H "Content-Type: application/json" -d '{"action":"<key>", ...}'
-   (Use literalmente __SERVER_BASE__ — não invente URL.)
-7. Devolva APENAS o HTML cru, sem markdown, sem \`\`\`, sem comentários fora dele. Deve abrir com <!doctype html>.`;
+REGRAS ABSOLUTAS — LEIA TUDO:
+
+1. URL DO BACKEND
+   - Toda chamada vai para a string LITERAL __SERVER_BASE__ (não substitua, não invente URL). O backend substitui depois pelo proxy real "/api/public/s/<slug>".
+   - NUNCA chame URLs externas diretamente (Instagram, Facebook, qualquer API original) — isso quebra por CORS. SEMPRE __SERVER_BASE__.
+
+2. COMO CHAMAR
+   - method: "POST"
+   - headers: { "Content-Type": "application/json" }   ← APENAS isso. Nunca inclua Authorization, cookies, sessionid, csrftoken, fb_dtsg, User-Agent ou qualquer header da API original. Esses ficam no servidor.
+   - body: JSON.stringify({ "action": "<action_key do endpoint>", ...campos_do_usuario })
+   - O servidor já tem os headers, cookies, body_template e variáveis. Você só passa o que o usuário digitou (id, mensagem, link, etc.) usando as MESMAS chaves do user_inputs / placeholders {{NOME}}.
+
+3. FLUXOS ENCADEADOS (ex: extrair id do reel → enviar mensagem)
+   - Se um endpoint tem chain_to_action setado, basta chamar SÓ ele com os inputs — o backend chama o próximo automaticamente. Resposta vem com {ok, extracted, chained_status, chained_response}.
+   - Se NÃO tem chain_to_action mas o usuário descreveu o fluxo, faça você mesmo no JS: chame o endpoint extrator, leia "value" da resposta JSON, depois chame o segundo endpoint passando esse valor no campo certo (ex: id). Mostre as duas respostas.
+   - Aceite link do Instagram (/reel/, /p/, /reels/) E também id direto. Se o input parecer link, mande o link inteiro pro backend extrator. Se parecer só números, pule a extração.
+
+4. NADA DE SIMULAÇÃO
+   - Proibido: Math.random, setTimeout fingindo loading, mock, "exemplo de resposta", lorem ipsum, dados estáticos. Toda resposta exibida vem do fetch real.
+   - Mostre status HTTP e body cru (formatado se JSON) num <pre> visível depois de cada execução.
+
+5. UI
+   - Para cada endpoint no array, gere um cartão com: nome, descrição, badge método+URL original (apenas informativo, em <code>), formulário com os user_inputs e botão "Executar".
+   - Use Tailwind via <script src="https://cdn.tailwindcss.com"></script>. Use gradientes, sombras, transform 3D quando o usuário pedir "bonito/3D". Dark theme por padrão.
+   - Mostre também um bloco "cURL para devs": curl -X POST "<origem>__SERVER_BASE__" -H "Content-Type: application/json" -d '{"action":"<key>","campo":"valor"}'
+
+6. SAÍDA
+   - Devolva APENAS o HTML cru. Sem markdown, sem \`\`\`, sem texto fora. Começa com <!doctype html>.`;
                 const htmlRaw = await callAi([
                   { role: "system", content: htmlSys },
-                  { role: "user", content: JSON.stringify({ server: plan.server, endpoints: finalEndpoints.map((e: any) => ({ name: e.name, description: e.description, action_key: e.action_key, method: e.method, url: e.url, headers_keys: Object.keys(e.headers || {}), body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null, variables_used: Object.keys(plan.server?.variables || {}) })), instructions }) },
+                  { role: "user", content: JSON.stringify({
+                    server: plan.server,
+                    endpoints: finalEndpoints.map((e: any) => ({
+                      name: e.name, description: e.description, action_key: e.action_key,
+                      method: e.method, url: e.url,
+                      body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null,
+                      extract_regex: e.extract_regex || null,
+                      chain_to_action: e.chain_to_action || null,
+                      user_inputs: e.user_inputs || [],
+                    })),
+                    instructions,
+                  }) },
                 ], false);
                 html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
                 log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
