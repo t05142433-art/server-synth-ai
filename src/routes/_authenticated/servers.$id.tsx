@@ -254,6 +254,13 @@ function ConfigureServer() {
                     <input value={ep.extract_token_prefix ?? ""} onChange={(e) => updEp(ep.id, { extract_token_prefix: e.target.value })} placeholder='Prefixo opcional (ex: "Bearer ")' className={inputCls + " font-mono text-xs col-span-3"} />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-3">
+                    <div className="col-span-2 text-xs font-medium">🪄 Regex + Encadeamento automático</div>
+                    <input value={ep.extract_regex ?? ""} onChange={(e) => updEp(ep.id, { extract_regex: e.target.value })} placeholder="extract_regex (ex: instagram://media\?id=([0-9]+))" className={inputCls + " font-mono text-xs col-span-2"} />
+                    <input value={ep.chain_to_action ?? ""} onChange={(e) => updEp(ep.id, { chain_to_action: e.target.value })} placeholder="Após extrair, chamar action_key… (ex: send_msg)" className={inputCls + " font-mono text-xs col-span-2"} />
+                    <p className="col-span-2 text-[11px] text-muted-foreground">Se preenchido, o backend extrai o valor da resposta e automaticamente chama o próximo endpoint passando-o como {"{{ID}}"} / {"{{VALUE}}"} no body_template/headers/url do endpoint encadeado.</p>
+                  </div>
+
                   <div className="flex gap-4 text-xs">
                     <label className="inline-flex items-center gap-1"><input type="checkbox" checked={ep.forward_query} onChange={(e) => updEp(ep.id, { forward_query: e.target.checked })} /> Encaminhar query</label>
                     <label className="inline-flex items-center gap-1"><input type="checkbox" checked={ep.forward_body} onChange={(e) => updEp(ep.id, { forward_body: e.target.checked })} /> Encaminhar body</label>
