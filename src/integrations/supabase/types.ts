@@ -18,8 +18,10 @@ export type Database = {
         Row: {
           action_key: string | null
           body_template: string | null
+          chain_to_action: string | null
           created_at: string
           description: string | null
+          extract_regex: string | null
           extract_token_path: string | null
           extract_token_prefix: string | null
           extract_token_var: string | null
@@ -38,8 +40,10 @@ export type Database = {
         Insert: {
           action_key?: string | null
           body_template?: string | null
+          chain_to_action?: string | null
           created_at?: string
           description?: string | null
+          extract_regex?: string | null
           extract_token_path?: string | null
           extract_token_prefix?: string | null
           extract_token_var?: string | null
@@ -58,8 +62,10 @@ export type Database = {
         Update: {
           action_key?: string | null
           body_template?: string | null
+          chain_to_action?: string | null
           created_at?: string
           description?: string | null
+          extract_regex?: string | null
           extract_token_path?: string | null
           extract_token_prefix?: string | null
           extract_token_var?: string | null
@@ -91,6 +97,8 @@ export type Database = {
           description: string | null
           html: string
           id: string
+          maintenance_message: string | null
+          maintenance_mode: boolean
           server_id: string | null
           slug: string
           title: string
@@ -102,6 +110,8 @@ export type Database = {
           description?: string | null
           html?: string
           id?: string
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
           server_id?: string | null
           slug: string
           title?: string
@@ -113,6 +123,8 @@ export type Database = {
           description?: string | null
           html?: string
           id?: string
+          maintenance_message?: string | null
+          maintenance_mode?: boolean
           server_id?: string | null
           slug?: string
           title?: string
