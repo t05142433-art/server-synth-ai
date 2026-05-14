@@ -67,8 +67,10 @@ function CurlTester() {
     setBusy(true); setLogs([]); setPlan(null); setFinalEndpoints(null); setHtml(null); setSaved(null);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authHeaders = sessionData.session?.access_token ? { Authorization: `Bearer ${sessionData.session.access_token}` } : {};
       const r = await fetch("/api/ai/auto-configure", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ curls: valid, instructions, expected_output: expectedOutput, generate_html: generateHtml }),
       });
       if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
