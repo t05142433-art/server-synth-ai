@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_settings: {
+        Row: {
+          api_key: string | null
+          base_url: string | null
+          created_at: string
+          id: string
+          max_rounds: number
+          mode: string
+          model: string
+          provider: string
+          temperature: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key?: string | null
+          base_url?: string | null
+          created_at?: string
+          id?: string
+          max_rounds?: number
+          mode?: string
+          model?: string
+          provider?: string
+          temperature?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key?: string | null
+          base_url?: string | null
+          created_at?: string
+          id?: string
+          max_rounds?: number
+          mode?: string
+          model?: string
+          provider?: string
+          temperature?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       endpoints: {
         Row: {
           action_key: string | null
