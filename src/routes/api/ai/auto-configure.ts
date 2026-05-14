@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -10,6 +11,57 @@ const PRIVATE = /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.|192\.168\.)|
 const safeUrl = (u: string) => {
   try { const url = new URL(u); return /^https?:$/.test(url.protocol) && !PRIVATE.test(url.hostname); } catch { return false; }
 };
+
+type AiSettings = {
+  mode: "auto" | "manual";
+  provider: "lovable" | "openai_compatible";
+  model: string;
+  base_url?: string | null;
+  api_key?: string | null;
+  temperature?: number | null;
+  max_rounds?: number | null;
+};
+
+const DEFAULT_AI: AiSettings = {
+  mode: "auto",
+  provider: "lovable",
+  model: "google/gemini-3-flash-preview",
+  max_rounds: 2,
+  temperature: 0.2,
+};
+
+async function loadAiSettings(request: Request): Promise<AiSettings> {
+  const auth = request.headers.get("authorization");
+  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return DEFAULT_AI;
+  try {
+    const { data: userRes } = await supabaseAdmin.auth.getUser(token);
+    const userId = userRes.user?.id;
+    if (!userId) return DEFAULT_AI;
+    const { data } = await (supabaseAdmin as any)
+      .from("ai_settings")
+      .select("mode,provider,model,base_url,api_key,temperature,max_rounds")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return data ? { ...DEFAULT_AI, ...data } : DEFAULT_AI;
+  } catch {
+    return DEFAULT_AI;
+  }
+}
+
+function normalizeGatewayUrl(settings: AiSettings) {
+  if (settings.provider === "openai_compatible") {
+    const base = String(settings.base_url || "").trim().replace(/\/$/, "");
+    if (!base || !settings.api_key) throw new Error("Configuração manual incompleta: informe Base URL e API Key no Perfil");
+    return base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
+  }
+  return "https://ai.gateway.lovable.dev/v1/chat/completions";
+}
+
+function headersForGateway(settings: AiSettings, key: string) {
+  if (settings.provider === "openai_compatible") return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  return { "Lovable-API-Key": key, "X-Lovable-AIG-SDK": "vercel-ai-sdk", "Content-Type": "application/json" };
+}
 
 const SYS_PLAN = `Você é um engenheiro de APIs trabalhando como um terminal Termux com IA. Recebe:
 - Um ou mais comandos cURL (até 4)
