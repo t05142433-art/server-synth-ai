@@ -58,7 +58,7 @@ function normalizeGatewayUrl(settings: AiSettings) {
   return "https://ai.gateway.lovable.dev/v1/chat/completions";
 }
 
-function headersForGateway(settings: AiSettings, key: string) {
+function headersForGateway(settings: AiSettings, key: string): Record<string, string> {
   if (settings.provider === "openai_compatible") return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
   return { "Lovable-API-Key": key, "X-Lovable-AIG-SDK": "vercel-ai-sdk", "Content-Type": "application/json" };
 }
