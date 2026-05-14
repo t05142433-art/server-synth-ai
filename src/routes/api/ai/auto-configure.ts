@@ -378,15 +378,20 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                   if (attempt > max_retries) { log(`⚠ Limite de ${max_retries} tentativas atingido — salvando mesmo assim para você ajustar manualmente`, "warn"); break; }
 
                   log(`🧠 IA analisando falha (tentativa ${attempt}/${max_retries}) e ajustando…`, "ai");
-                  const fixRaw = await callAi([
-                    { role: "system", content: SYS_FIX },
-                    { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
-                  ]);
                   try {
-                    const fix = JSON.parse(fixRaw);
-                    if (fix.fix_notes) log(`💡 ${fix.fix_notes}`, "ai");
-                    ep = { ...ep, ...fix };
-                  } catch { log(`⚠ IA devolveu JSON inválido, repetindo igual`, "warn"); }
+                    const fixRaw = await callAi([
+                      { role: "system", content: SYS_FIX },
+                      { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
+                    ], true, aiSettings);
+                    try {
+                      const fix = JSON.parse(fixRaw);
+                      if (fix.fix_notes) log(`💡 ${fix.fix_notes}`, "ai");
+                      ep = { ...ep, ...fix };
+                    } catch { log(`⚠ IA devolveu JSON inválido, repetindo igual`, "warn"); }
+                  } catch (err: any) {
+                    log(`⚠ IA não corrigiu agora (${String(err?.message || err).slice(0, 140)}). Mantendo endpoint salvo para edição manual.`, "warn");
+                    break;
+                  }
                 }
 
                 finalEndpoints.push({ ...ep, _success: success, _attempts: attempts.length });
