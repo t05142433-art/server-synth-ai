@@ -309,6 +309,7 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
       POST: async ({ request }) => {
         const { curls = [], instructions = "", expected_output = "", generate_html = false, max_retries = 12 } = await request.json();
         if (!Array.isArray(curls) || curls.length === 0) return Response.json({ error: "Envie ao menos 1 cURL" }, { status: 400 });
+        const aiSettings = await loadAiSettings(request);
 
         const enc = new TextEncoder();
         const stream = new ReadableStream({
@@ -323,13 +324,19 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               if (instructions) log(`📝 Instruções: ${instructions.slice(0, 200)}`, "info");
               if (expected_output) log(`🎯 Output esperado fornecido (${expected_output.length} chars)`, "info");
 
-              log("🧠 IA analisando comandos e planejando servidor…", "ai");
-              const planRaw = await callAi([
-                { role: "system", content: SYS_PLAN },
-                { role: "user", content: `cURLs:\n${curls.map((c: string, i: number) => `# ${i + 1}\n${c}`).join("\n\n")}\n\nInstruções: ${instructions || "(nenhuma)"}\n\nOutput esperado:\n${expected_output || "(nenhum)"}` },
-              ]);
               let plan: any;
-              try { plan = JSON.parse(planRaw); } catch { throw new Error("IA devolveu JSON inválido: " + planRaw.slice(0, 200)); }
+              log(`🧠 IA analisando comandos e planejando servidor (${aiSettings.mode === "manual" ? "manual" : "automático"})…`, "ai");
+              try {
+                const planRaw = await callAi([
+                  { role: "system", content: SYS_PLAN },
+                  { role: "user", content: `cURLs:\n${curls.map((c: string, i: number) => `# ${i + 1}\n${c}`).join("\n\n")}\n\nInstruções: ${instructions || "(nenhuma)"}\n\nOutput esperado:\n${expected_output || "(nenhum)"}` },
+                ], true, aiSettings);
+                try { plan = JSON.parse(planRaw); } catch { throw new Error("IA devolveu JSON inválido: " + planRaw.slice(0, 200)); }
+              } catch (err: any) {
+                log(`⚠ IA indisponível (${String(err?.message || err).slice(0, 180)}). Gerando configuração local para não travar…`, "warn");
+                plan = buildFallbackPlan(curls, instructions);
+              }
+              if (!Array.isArray(plan.endpoints) || plan.endpoints.length === 0) plan = buildFallbackPlan(curls, instructions);
               log(`✓ Plano: "${plan.server?.name}" com ${plan.endpoints?.length ?? 0} endpoint(s)`, "ok");
               if (plan.notes) log(`💡 ${plan.notes}`, "ai");
               send("plan", plan);
