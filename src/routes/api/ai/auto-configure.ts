@@ -126,20 +126,23 @@ const MODEL_FALLBACKS = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callAi(messages: any[], jsonObject = true) {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("LOVABLE_API_KEY ausente");
+async function callAi(messages: any[], jsonObject = true, settings: AiSettings = DEFAULT_AI) {
+  const apiKey = settings.provider === "openai_compatible" ? settings.api_key : process.env.LOVABLE_API_KEY;
+  if (!apiKey) throw new Error(settings.provider === "openai_compatible" ? "API Key manual ausente" : "LOVABLE_API_KEY ausente");
   let lastErr = "";
-  // Tenta cada modelo, com retry em rate-limit. Nunca desiste por 402/429.
-  for (let round = 0; round < 6; round++) {
-    for (const model of MODEL_FALLBACKS) {
+  const models = settings.provider === "openai_compatible" ? [settings.model] : [settings.model, ...MODEL_FALLBACKS.filter((m) => m !== settings.model)];
+  const url = normalizeGatewayUrl(settings);
+  const rounds = Math.max(1, Math.min(Number(settings.max_rounds || 2), 4));
+  for (let round = 0; round < rounds; round++) {
+    for (const model of models) {
       try {
-        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const res = await fetch(url, {
           method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          headers: headersForGateway(settings, apiKey),
           body: JSON.stringify({
             model,
             messages,
+            temperature: settings.temperature ?? 0.2,
             ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
           }),
         });
@@ -152,16 +155,14 @@ async function callAi(messages: any[], jsonObject = true) {
         }
         const txt = (await res.text()).slice(0, 300);
         lastErr = `${res.status} ${txt}`;
-        // 429 (rate) ou 402 (credito): espera e tenta proximo modelo
         if (res.status === 429 || res.status === 402 || res.status >= 500) {
-          await sleep(1500 + round * 2000);
+          await sleep(500 + round * 800);
           continue;
         }
-        // Outros erros tambem tentam proximo modelo
         continue;
       } catch (e: any) {
         lastErr = e?.message || String(e);
-        await sleep(1000);
+        await sleep(350);
         continue;
       }
     }
