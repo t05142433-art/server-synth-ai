@@ -136,9 +136,12 @@ async function callAi(messages: any[], jsonObject = true, settings: AiSettings =
   for (let round = 0; round < rounds; round++) {
     for (const model of models) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25_000);
         const res = await fetch(url, {
           method: "POST",
           headers: headersForGateway(settings, apiKey),
+          signal: controller.signal,
           body: JSON.stringify({
             model,
             messages,
@@ -146,6 +149,7 @@ async function callAi(messages: any[], jsonObject = true, settings: AiSettings =
             ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
           }),
         });
+        clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
           const content = data?.choices?.[0]?.message?.content;
@@ -168,6 +172,91 @@ async function callAi(messages: any[], jsonObject = true, settings: AiSettings =
     }
   }
   throw new Error(`AI indisponivel apos varias tentativas: ${lastErr}`);
+}
+
+function tokenizeCurl(curl: string) {
+  const out: string[] = [];
+  const re = /'([^']*)'|"([^"\\]*(?:\\.[^"\\]*)*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(curl.replace(/\\\n/g, " ")))) out.push(m[1] ?? (m[2] ? m[2].replace(/\\"/g, '"') : m[3]));
+  return out;
+}
+
+function extractGrepRegex(curl: string) {
+  const m = curl.match(/grep\s+-oP\s+(['"])([\s\S]*?)\1/);
+  if (!m?.[2]) return null;
+  return m[2].replace(/\\K(.+)$/, "($1)").replace(/\[0-9\]\+/g, "[0-9]+");
+}
+
+function parseCurlFallback(curl: string, index: number) {
+  const clean = curl.split("|")[0].trim();
+  const tokens = tokenizeCurl(clean).filter((t) => t !== "curl");
+  let method = "GET";
+  let url = "";
+  let body: string | null = null;
+  const headers: Record<string, string> = {};
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (["-X", "--request"].includes(t)) method = String(tokens[++i] || method).toUpperCase();
+    else if (["-H", "--header"].includes(t)) {
+      const raw = String(tokens[++i] || "");
+      const p = raw.indexOf(":");
+      if (p > 0) headers[raw.slice(0, p).trim()] = raw.slice(p + 1).trim();
+    } else if (["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode"].includes(t)) {
+      body = String(tokens[++i] || "");
+      if (method === "GET") method = "POST";
+    } else if (!t.startsWith("-") && /^https?:\/\//i.test(t)) url = t;
+  }
+  const lower = Object.fromEntries(Object.keys(headers).map((k) => [k.toLowerCase(), k]));
+  const add = (k: string, v: string) => { if (!lower[k.toLowerCase()]) headers[k] = v; };
+  add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36");
+  add("Accept", "*/*");
+  add("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7");
+  const path = (() => { try { return new URL(url).pathname.split("/").filter(Boolean).slice(-1)[0] || `endpoint-${index + 1}`; } catch { return `endpoint-${index + 1}`; } })();
+  return {
+    name: `Endpoint ${index + 1}`,
+    action_key: path.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || `acao_${index + 1}`,
+    description: "Criado automaticamente pelo parser local quando a IA estava indisponível.",
+    method,
+    url,
+    headers,
+    body,
+    extract_regex: extractGrepRegex(curl),
+    expected_contains: null,
+    chain_to_action: null,
+    user_inputs: [],
+  };
+}
+
+function buildFallbackPlan(curls: string[], instructions: string) {
+  const endpoints = curls.map(parseCurlFallback).filter((e) => e.url);
+  return {
+    server: {
+      name: "API configurada sem IA",
+      description: "Plano criado por parser local para não travar quando o provedor de IA estiver sem quota, crédito ou indisponível.",
+      variables: {},
+    },
+    endpoints,
+    notes: instructions ? "A IA falhou; usei configuração local com os cURLs enviados." : "A IA falhou; usei configuração local automática.",
+  };
+}
+
+function escapeHtml(s: unknown) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+function buildFallbackHtml(plan: any, endpoints: any[]) {
+  const cards = endpoints.map((e: any) => `
+    <article class="card">
+      <div class="pill">${escapeHtml(e.method)} • ${escapeHtml(e.action_key || "run")}</div>
+      <h3>${escapeHtml(e.name)}</h3><p>${escapeHtml(e.description || e.url)}</p>
+      <textarea class="payload" spellcheck="false">${escapeHtml(JSON.stringify({ action: e.action_key || undefined }, null, 2))}</textarea>
+      <button onclick="run(this)">Executar real</button>
+      <pre></pre>
+    </article>`).join("");
+  return `<!doctype html><html lang="pt-br"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(plan.server?.name || "API")}</title><script src="https://cdn.tailwindcss.com"></script><style>
+body{margin:0;background:#050816;color:#f8fbff;font-family:Inter,ui-sans-serif,system-ui;overflow-x:hidden}.mesh{position:fixed;inset:-20%;background:radial-gradient(circle at 20% 20%,#22d3ee55,transparent 28%),radial-gradient(circle at 80% 10%,#a855f755,transparent 30%),radial-gradient(circle at 50% 90%,#10b98144,transparent 32%);filter:blur(50px);animation:float 12s ease-in-out infinite alternate;z-index:-1}@keyframes float{to{transform:translate3d(2%,-3%,0) scale(1.08)}}.wrap{max-width:1180px;margin:auto;padding:70px 22px}.hero{min-height:44vh;display:grid;align-content:center}.badge,.pill{display:inline-flex;width:max-content;border:1px solid #ffffff22;background:#ffffff10;border-radius:999px;padding:8px 12px;color:#a7f3d0;font-size:12px}.title{font-size:clamp(42px,8vw,96px);line-height:.92;font-weight:900;letter-spacing:0;background:linear-gradient(90deg,#fff,#67e8f9,#86efac,#c4b5fd);-webkit-background-clip:text;color:transparent;margin:18px 0}.sub{max-width:720px;color:#b8c4de;font-size:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.card{transform-style:preserve-3d;border:1px solid #ffffff18;background:linear-gradient(180deg,#ffffff14,#ffffff08);border-radius:22px;padding:22px;box-shadow:0 30px 90px #0008;backdrop-filter:blur(18px)}.card:hover{transform:perspective(1200px) rotateX(2deg) translateY(-4px)}h3{font-size:22px;margin:14px 0 8px}.payload{width:100%;height:110px;margin:14px 0;border:1px solid #ffffff1f;border-radius:14px;background:#020617;color:#d1fae5;padding:12px;font:12px ui-monospace,monospace}button{border:0;border-radius:14px;background:linear-gradient(135deg,#22d3ee,#10b981);color:#041014;font-weight:800;padding:12px 16px;box-shadow:0 15px 40px #22d3ee44;cursor:pointer}pre{white-space:pre-wrap;overflow:auto;max-height:260px;margin-top:14px;background:#020617;border:1px solid #ffffff14;border-radius:14px;padding:12px;color:#d8f3ff;font-size:12px}</style></head><body><div class="mesh"></div><main class="wrap"><section class="hero"><span class="badge">API real conectada ao servidor</span><h1 class="title">${escapeHtml(plan.server?.name || "Painel API")}</h1><p class="sub">${escapeHtml(plan.server?.description || "Execute endpoints reais pelo backend configurado, sem chamadas externas diretas no navegador.")}</p></section><section class="grid">${cards}</section></main><script>
+const API="__SERVER_BASE__";async function run(btn){const card=btn.closest('.card');const pre=card.querySelector('pre');let payload={};try{payload=JSON.parse(card.querySelector('textarea').value||'{}')}catch(e){pre.textContent='JSON inválido: '+e.message;return}pre.textContent='Enviando request real...';try{const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const text=await r.text();pre.textContent='HTTP '+r.status+'\n\n'+text}catch(e){pre.textContent='Erro de rede: '+e.message}}</script></body></html>`;
 }
 
 async function execEndpoint(ep: any) {
