@@ -440,23 +440,28 @@ REGRAS ABSOLUTAS DE CONEXÃO — LEIA TUDO:
 
 6. SAÍDA
    - Devolva APENAS o HTML cru. Sem markdown, sem \`\`\`, sem texto fora. Começa com <!doctype html>.`;
-                const htmlRaw = await callAi([
-                  { role: "system", content: htmlSys },
-                  { role: "user", content: JSON.stringify({
-                    server: plan.server,
-                    endpoints: finalEndpoints.map((e: any) => ({
-                      name: e.name, description: e.description, action_key: e.action_key,
-                      method: e.method, url: e.url,
-                      body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null,
-                      extract_regex: e.extract_regex || null,
-                      chain_to_action: e.chain_to_action || null,
-                      user_inputs: e.user_inputs || [],
-                    })),
-                    instructions,
-                  }) },
-                ], false);
-                html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
-                log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
+                try {
+                  const htmlRaw = await callAi([
+                    { role: "system", content: htmlSys },
+                    { role: "user", content: JSON.stringify({
+                      server: plan.server,
+                      endpoints: finalEndpoints.map((e: any) => ({
+                        name: e.name, description: e.description, action_key: e.action_key,
+                        method: e.method, url: e.url,
+                        body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null,
+                        extract_regex: e.extract_regex || null,
+                        chain_to_action: e.chain_to_action || null,
+                        user_inputs: e.user_inputs || [],
+                      })),
+                      instructions,
+                    }) },
+                  ], false, aiSettings);
+                  html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
+                  log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
+                } catch (err: any) {
+                  html = buildFallbackHtml(plan, finalEndpoints);
+                  log(`⚠ IA de HTML indisponível; gerei uma página 3D local funcional (${html.length} chars).`, "warn");
+                }
               }
 
               send("done", { plan, endpoints: finalEndpoints, html });
