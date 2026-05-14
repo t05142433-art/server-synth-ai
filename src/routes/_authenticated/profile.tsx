@@ -24,7 +24,7 @@ function ProfilePage() {
     clear_api_key: false,
   });
 
-  const authHeaders = async () => {
+  const authHeaders = async (): Promise<Record<string, string>> => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {};
   };
