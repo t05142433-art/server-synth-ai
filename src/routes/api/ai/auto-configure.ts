@@ -62,21 +62,59 @@ const SYS_FIX = `Você é o mesmo engenheiro. Um endpoint falhou. Recebe:
 Devolva APENAS JSON com o endpoint CORRIGIDO no mesmo schema dos endpoints (com name, action_key, method, url, headers, body, extract_regex, expected_contains) + "fix_notes": "<o que mudou>".
 Estratégias: trocar User-Agent, adicionar cookies/referrer, mudar Accept, ajustar regex, mudar método, adicionar query params, decodificar gzip via Accept-Encoding: identity.`;
 
+const MODEL_FALLBACKS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-flash-lite",
+  "google/gemini-3-flash-preview",
+  "google/gemini-2.5-pro",
+  "openai/gpt-5-mini",
+  "openai/gpt-5-nano",
+  "openai/gpt-5",
+];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function callAi(messages: any[], jsonObject = true) {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY ausente");
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages,
-      ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
-  if (!res.ok) throw new Error(`AI ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || "";
+  let lastErr = "";
+  // Tenta cada modelo, com retry em rate-limit. Nunca desiste por 402/429.
+  for (let round = 0; round < 6; round++) {
+    for (const model of MODEL_FALLBACKS) {
+      try {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages,
+            ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (content) return content;
+          lastErr = "resposta vazia";
+          continue;
+        }
+        const txt = (await res.text()).slice(0, 300);
+        lastErr = `${res.status} ${txt}`;
+        // 429 (rate) ou 402 (credito): espera e tenta proximo modelo
+        if (res.status === 429 || res.status === 402 || res.status >= 500) {
+          await sleep(1500 + round * 2000);
+          continue;
+        }
+        // Outros erros tambem tentam proximo modelo
+        continue;
+      } catch (e: any) {
+        lastErr = e?.message || String(e);
+        await sleep(1000);
+        continue;
+      }
+    }
+  }
+  throw new Error(`AI indisponivel apos varias tentativas: ${lastErr}`);
 }
 
 async function execEndpoint(ep: any) {
