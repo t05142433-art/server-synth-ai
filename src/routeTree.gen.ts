@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCurlTesterRouteImport } from './routes/_authenticated/curl-tester'
 import { Route as AuthenticatedAiZipRouteImport } from './routes/_authenticated/ai-zip'
@@ -39,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/ai-zip': typeof AuthenticatedAiZipRoute
   '/curl-tester': typeof AuthenticatedCurlTesterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
   '/servers/$id': typeof AuthenticatedServersIdRoute
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/ai-zip': typeof AuthenticatedAiZipRoute
   '/curl-tester': typeof AuthenticatedCurlTesterRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
   '/servers/$id': typeof AuthenticatedServersIdRoute
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_authenticated/ai-zip': typeof AuthenticatedAiZipRoute
   '/_authenticated/curl-tester': typeof AuthenticatedCurlTesterRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/serverlogs/$id': typeof AuthenticatedServerlogsIdRoute
   '/_authenticated/servers/$id': typeof AuthenticatedServersIdRoute
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | '/ai-zip'
     | '/curl-tester'
     | '/dashboard'
+    | '/profile'
     | '/serverlogs/$id'
     | '/servers/$id'
     | '/api/ai/auto-configure'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/ai-zip'
     | '/curl-tester'
     | '/dashboard'
+    | '/profile'
     | '/serverlogs/$id'
     | '/servers/$id'
     | '/api/ai/auto-configure'
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ai-zip'
     | '/_authenticated/curl-tester'
     | '/_authenticated/dashboard'
+    | '/_authenticated/profile'
     | '/_authenticated/serverlogs/$id'
     | '/_authenticated/servers/$id'
     | '/api/ai/auto-configure'
@@ -251,6 +263,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
@@ -350,6 +369,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAiZipRoute: typeof AuthenticatedAiZipRoute
   AuthenticatedCurlTesterRoute: typeof AuthenticatedCurlTesterRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedServerlogsIdRoute: typeof AuthenticatedServerlogsIdRoute
   AuthenticatedServersIdRoute: typeof AuthenticatedServersIdRoute
 }
@@ -358,6 +378,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAiZipRoute: AuthenticatedAiZipRoute,
   AuthenticatedCurlTesterRoute: AuthenticatedCurlTesterRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedServerlogsIdRoute: AuthenticatedServerlogsIdRoute,
   AuthenticatedServersIdRoute: AuthenticatedServersIdRoute,
 }
