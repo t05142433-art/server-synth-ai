@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -10,6 +11,57 @@ const PRIVATE = /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.|192\.168\.)|
 const safeUrl = (u: string) => {
   try { const url = new URL(u); return /^https?:$/.test(url.protocol) && !PRIVATE.test(url.hostname); } catch { return false; }
 };
+
+type AiSettings = {
+  mode: "auto" | "manual";
+  provider: "lovable" | "openai_compatible";
+  model: string;
+  base_url?: string | null;
+  api_key?: string | null;
+  temperature?: number | null;
+  max_rounds?: number | null;
+};
+
+const DEFAULT_AI: AiSettings = {
+  mode: "auto",
+  provider: "lovable",
+  model: "google/gemini-3-flash-preview",
+  max_rounds: 2,
+  temperature: 0.2,
+};
+
+async function loadAiSettings(request: Request): Promise<AiSettings> {
+  const auth = request.headers.get("authorization");
+  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return DEFAULT_AI;
+  try {
+    const { data: userRes } = await supabaseAdmin.auth.getUser(token);
+    const userId = userRes.user?.id;
+    if (!userId) return DEFAULT_AI;
+    const { data } = await (supabaseAdmin as any)
+      .from("ai_settings")
+      .select("mode,provider,model,base_url,api_key,temperature,max_rounds")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return data ? { ...DEFAULT_AI, ...data } : DEFAULT_AI;
+  } catch {
+    return DEFAULT_AI;
+  }
+}
+
+function normalizeGatewayUrl(settings: AiSettings) {
+  if (settings.provider === "openai_compatible") {
+    const base = String(settings.base_url || "").trim().replace(/\/$/, "");
+    if (!base || !settings.api_key) throw new Error("Configuração manual incompleta: informe Base URL e API Key no Perfil");
+    return base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
+  }
+  return "https://ai.gateway.lovable.dev/v1/chat/completions";
+}
+
+function headersForGateway(settings: AiSettings, key: string): Record<string, string> {
+  if (settings.provider === "openai_compatible") return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  return { "Lovable-API-Key": key, "X-Lovable-AIG-SDK": "vercel-ai-sdk", "Content-Type": "application/json" };
+}
 
 const SYS_PLAN = `Você é um engenheiro de APIs trabalhando como um terminal Termux com IA. Recebe:
 - Um ou mais comandos cURL (até 4)
@@ -74,23 +126,30 @@ const MODEL_FALLBACKS = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callAi(messages: any[], jsonObject = true) {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("LOVABLE_API_KEY ausente");
+async function callAi(messages: any[], jsonObject = true, settings: AiSettings = DEFAULT_AI) {
+  const apiKey = settings.provider === "openai_compatible" ? settings.api_key : process.env.LOVABLE_API_KEY;
+  if (!apiKey) throw new Error(settings.provider === "openai_compatible" ? "API Key manual ausente" : "LOVABLE_API_KEY ausente");
   let lastErr = "";
-  // Tenta cada modelo, com retry em rate-limit. Nunca desiste por 402/429.
-  for (let round = 0; round < 6; round++) {
-    for (const model of MODEL_FALLBACKS) {
+  const models = settings.provider === "openai_compatible" ? [settings.model] : [settings.model, ...MODEL_FALLBACKS.filter((m) => m !== settings.model)];
+  const url = normalizeGatewayUrl(settings);
+  const rounds = Math.max(1, Math.min(Number(settings.max_rounds || 2), 4));
+  for (let round = 0; round < rounds; round++) {
+    for (const model of models) {
       try {
-        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25_000);
+        const res = await fetch(url, {
           method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          headers: headersForGateway(settings, apiKey),
+          signal: controller.signal,
           body: JSON.stringify({
             model,
             messages,
+            temperature: settings.temperature ?? 0.2,
             ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
           }),
         });
+        clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
           const content = data?.choices?.[0]?.message?.content;
@@ -100,21 +159,104 @@ async function callAi(messages: any[], jsonObject = true) {
         }
         const txt = (await res.text()).slice(0, 300);
         lastErr = `${res.status} ${txt}`;
-        // 429 (rate) ou 402 (credito): espera e tenta proximo modelo
         if (res.status === 429 || res.status === 402 || res.status >= 500) {
-          await sleep(1500 + round * 2000);
+          await sleep(500 + round * 800);
           continue;
         }
-        // Outros erros tambem tentam proximo modelo
         continue;
       } catch (e: any) {
         lastErr = e?.message || String(e);
-        await sleep(1000);
+        await sleep(350);
         continue;
       }
     }
   }
   throw new Error(`AI indisponivel apos varias tentativas: ${lastErr}`);
+}
+
+function tokenizeCurl(curl: string) {
+  const out: string[] = [];
+  const re = /'([^']*)'|"([^"\\]*(?:\\.[^"\\]*)*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(curl.replace(/\\\n/g, " ")))) out.push(m[1] ?? (m[2] ? m[2].replace(/\\"/g, '"') : m[3]));
+  return out;
+}
+
+function extractGrepRegex(curl: string) {
+  const m = curl.match(/grep\s+-oP\s+(['"])([\s\S]*?)\1/);
+  if (!m?.[2]) return null;
+  return m[2].replace(/\\K(.+)$/, "($1)").replace(/\[0-9\]\+/g, "[0-9]+");
+}
+
+function parseCurlFallback(curl: string, index: number) {
+  const clean = curl.split("|")[0].trim();
+  const tokens = tokenizeCurl(clean).filter((t) => t !== "curl");
+  let method = "GET";
+  let url = "";
+  let body: string | null = null;
+  const headers: Record<string, string> = {};
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (["-X", "--request"].includes(t)) method = String(tokens[++i] || method).toUpperCase();
+    else if (["-H", "--header"].includes(t)) {
+      const raw = String(tokens[++i] || "");
+      const p = raw.indexOf(":");
+      if (p > 0) headers[raw.slice(0, p).trim()] = raw.slice(p + 1).trim();
+    } else if (["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode"].includes(t)) {
+      body = String(tokens[++i] || "");
+      if (method === "GET") method = "POST";
+    } else if (!t.startsWith("-") && /^https?:\/\//i.test(t)) url = t;
+  }
+  const lower = Object.fromEntries(Object.keys(headers).map((k) => [k.toLowerCase(), k]));
+  const add = (k: string, v: string) => { if (!lower[k.toLowerCase()]) headers[k] = v; };
+  add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36");
+  add("Accept", "*/*");
+  add("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7");
+  const path = (() => { try { return new URL(url).pathname.split("/").filter(Boolean).slice(-1)[0] || `endpoint-${index + 1}`; } catch { return `endpoint-${index + 1}`; } })();
+  return {
+    name: `Endpoint ${index + 1}`,
+    action_key: path.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || `acao_${index + 1}`,
+    description: "Criado automaticamente pelo parser local quando a IA estava indisponível.",
+    method,
+    url,
+    headers,
+    body,
+    extract_regex: extractGrepRegex(curl),
+    expected_contains: null,
+    chain_to_action: null,
+    user_inputs: [],
+  };
+}
+
+function buildFallbackPlan(curls: string[], instructions: string) {
+  const endpoints = curls.map(parseCurlFallback).filter((e) => e.url);
+  return {
+    server: {
+      name: "API configurada sem IA",
+      description: "Plano criado por parser local para não travar quando o provedor de IA estiver sem quota, crédito ou indisponível.",
+      variables: {},
+    },
+    endpoints,
+    notes: instructions ? "A IA falhou; usei configuração local com os cURLs enviados." : "A IA falhou; usei configuração local automática.",
+  };
+}
+
+function escapeHtml(s: unknown) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+function buildFallbackHtml(plan: any, endpoints: any[]) {
+  const cards = endpoints.map((e: any) => `
+    <article class="card">
+      <div class="pill">${escapeHtml(e.method)} • ${escapeHtml(e.action_key || "run")}</div>
+      <h3>${escapeHtml(e.name)}</h3><p>${escapeHtml(e.description || e.url)}</p>
+      <textarea class="payload" spellcheck="false">${escapeHtml(JSON.stringify({ action: e.action_key || undefined }, null, 2))}</textarea>
+      <button onclick="run(this)">Executar real</button>
+      <pre></pre>
+    </article>`).join("");
+  return `<!doctype html><html lang="pt-br"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(plan.server?.name || "API")}</title><script src="https://cdn.tailwindcss.com"></script><style>
+body{margin:0;background:#050816;color:#f8fbff;font-family:Inter,ui-sans-serif,system-ui;overflow-x:hidden}.mesh{position:fixed;inset:-20%;background:radial-gradient(circle at 20% 20%,#22d3ee55,transparent 28%),radial-gradient(circle at 80% 10%,#a855f755,transparent 30%),radial-gradient(circle at 50% 90%,#10b98144,transparent 32%);filter:blur(50px);animation:float 12s ease-in-out infinite alternate;z-index:-1}@keyframes float{to{transform:translate3d(2%,-3%,0) scale(1.08)}}.wrap{max-width:1180px;margin:auto;padding:70px 22px}.hero{min-height:44vh;display:grid;align-content:center}.badge,.pill{display:inline-flex;width:max-content;border:1px solid #ffffff22;background:#ffffff10;border-radius:999px;padding:8px 12px;color:#a7f3d0;font-size:12px}.title{font-size:clamp(42px,8vw,96px);line-height:.92;font-weight:900;letter-spacing:0;background:linear-gradient(90deg,#fff,#67e8f9,#86efac,#c4b5fd);-webkit-background-clip:text;color:transparent;margin:18px 0}.sub{max-width:720px;color:#b8c4de;font-size:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.card{transform-style:preserve-3d;border:1px solid #ffffff18;background:linear-gradient(180deg,#ffffff14,#ffffff08);border-radius:22px;padding:22px;box-shadow:0 30px 90px #0008;backdrop-filter:blur(18px)}.card:hover{transform:perspective(1200px) rotateX(2deg) translateY(-4px)}h3{font-size:22px;margin:14px 0 8px}.payload{width:100%;height:110px;margin:14px 0;border:1px solid #ffffff1f;border-radius:14px;background:#020617;color:#d1fae5;padding:12px;font:12px ui-monospace,monospace}button{border:0;border-radius:14px;background:linear-gradient(135deg,#22d3ee,#10b981);color:#041014;font-weight:800;padding:12px 16px;box-shadow:0 15px 40px #22d3ee44;cursor:pointer}pre{white-space:pre-wrap;overflow:auto;max-height:260px;margin-top:14px;background:#020617;border:1px solid #ffffff14;border-radius:14px;padding:12px;color:#d8f3ff;font-size:12px}</style></head><body><div class="mesh"></div><main class="wrap"><section class="hero"><span class="badge">API real conectada ao servidor</span><h1 class="title">${escapeHtml(plan.server?.name || "Painel API")}</h1><p class="sub">${escapeHtml(plan.server?.description || "Execute endpoints reais pelo backend configurado, sem chamadas externas diretas no navegador.")}</p></section><section class="grid">${cards}</section></main><script>
+const API="__SERVER_BASE__";async function run(btn){const card=btn.closest('.card');const pre=card.querySelector('pre');let payload={};try{payload=JSON.parse(card.querySelector('textarea').value||'{}')}catch(e){pre.textContent='JSON inválido: '+e.message;return}pre.textContent='Enviando request real...';try{const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const text=await r.text();pre.textContent='HTTP '+r.status+'\n\n'+text}catch(e){pre.textContent='Erro de rede: '+e.message}}</script></body></html>`;
 }
 
 async function execEndpoint(ep: any) {
@@ -167,6 +309,7 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
       POST: async ({ request }) => {
         const { curls = [], instructions = "", expected_output = "", generate_html = false, max_retries = 12 } = await request.json();
         if (!Array.isArray(curls) || curls.length === 0) return Response.json({ error: "Envie ao menos 1 cURL" }, { status: 400 });
+        const aiSettings = await loadAiSettings(request);
 
         const enc = new TextEncoder();
         const stream = new ReadableStream({
@@ -181,13 +324,19 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               if (instructions) log(`📝 Instruções: ${instructions.slice(0, 200)}`, "info");
               if (expected_output) log(`🎯 Output esperado fornecido (${expected_output.length} chars)`, "info");
 
-              log("🧠 IA analisando comandos e planejando servidor…", "ai");
-              const planRaw = await callAi([
-                { role: "system", content: SYS_PLAN },
-                { role: "user", content: `cURLs:\n${curls.map((c: string, i: number) => `# ${i + 1}\n${c}`).join("\n\n")}\n\nInstruções: ${instructions || "(nenhuma)"}\n\nOutput esperado:\n${expected_output || "(nenhum)"}` },
-              ]);
               let plan: any;
-              try { plan = JSON.parse(planRaw); } catch { throw new Error("IA devolveu JSON inválido: " + planRaw.slice(0, 200)); }
+              log(`🧠 IA analisando comandos e planejando servidor (${aiSettings.mode === "manual" ? "manual" : "automático"})…`, "ai");
+              try {
+                const planRaw = await callAi([
+                  { role: "system", content: SYS_PLAN },
+                  { role: "user", content: `cURLs:\n${curls.map((c: string, i: number) => `# ${i + 1}\n${c}`).join("\n\n")}\n\nInstruções: ${instructions || "(nenhuma)"}\n\nOutput esperado:\n${expected_output || "(nenhum)"}` },
+                ], true, aiSettings);
+                try { plan = JSON.parse(planRaw); } catch { throw new Error("IA devolveu JSON inválido: " + planRaw.slice(0, 200)); }
+              } catch (err: any) {
+                log(`⚠ IA indisponível (${String(err?.message || err).slice(0, 180)}). Gerando configuração local para não travar…`, "warn");
+                plan = buildFallbackPlan(curls, instructions);
+              }
+              if (!Array.isArray(plan.endpoints) || plan.endpoints.length === 0) plan = buildFallbackPlan(curls, instructions);
               log(`✓ Plano: "${plan.server?.name}" com ${plan.endpoints?.length ?? 0} endpoint(s)`, "ok");
               if (plan.notes) log(`💡 ${plan.notes}`, "ai");
               send("plan", plan);
@@ -229,15 +378,20 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                   if (attempt > max_retries) { log(`⚠ Limite de ${max_retries} tentativas atingido — salvando mesmo assim para você ajustar manualmente`, "warn"); break; }
 
                   log(`🧠 IA analisando falha (tentativa ${attempt}/${max_retries}) e ajustando…`, "ai");
-                  const fixRaw = await callAi([
-                    { role: "system", content: SYS_FIX },
-                    { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
-                  ]);
                   try {
-                    const fix = JSON.parse(fixRaw);
-                    if (fix.fix_notes) log(`💡 ${fix.fix_notes}`, "ai");
-                    ep = { ...ep, ...fix };
-                  } catch { log(`⚠ IA devolveu JSON inválido, repetindo igual`, "warn"); }
+                    const fixRaw = await callAi([
+                      { role: "system", content: SYS_FIX },
+                      { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
+                    ], true, aiSettings);
+                    try {
+                      const fix = JSON.parse(fixRaw);
+                      if (fix.fix_notes) log(`💡 ${fix.fix_notes}`, "ai");
+                      ep = { ...ep, ...fix };
+                    } catch { log(`⚠ IA devolveu JSON inválido, repetindo igual`, "warn"); }
+                  } catch (err: any) {
+                    log(`⚠ IA não corrigiu agora (${String(err?.message || err).slice(0, 140)}). Mantendo endpoint salvo para edição manual.`, "warn");
+                    break;
+                  }
                 }
 
                 finalEndpoints.push({ ...ep, _success: success, _attempts: attempts.length });
@@ -286,23 +440,28 @@ REGRAS ABSOLUTAS DE CONEXÃO — LEIA TUDO:
 
 6. SAÍDA
    - Devolva APENAS o HTML cru. Sem markdown, sem \`\`\`, sem texto fora. Começa com <!doctype html>.`;
-                const htmlRaw = await callAi([
-                  { role: "system", content: htmlSys },
-                  { role: "user", content: JSON.stringify({
-                    server: plan.server,
-                    endpoints: finalEndpoints.map((e: any) => ({
-                      name: e.name, description: e.description, action_key: e.action_key,
-                      method: e.method, url: e.url,
-                      body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null,
-                      extract_regex: e.extract_regex || null,
-                      chain_to_action: e.chain_to_action || null,
-                      user_inputs: e.user_inputs || [],
-                    })),
-                    instructions,
-                  }) },
-                ], false);
-                html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
-                log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
+                try {
+                  const htmlRaw = await callAi([
+                    { role: "system", content: htmlSys },
+                    { role: "user", content: JSON.stringify({
+                      server: plan.server,
+                      endpoints: finalEndpoints.map((e: any) => ({
+                        name: e.name, description: e.description, action_key: e.action_key,
+                        method: e.method, url: e.url,
+                        body_preview: typeof e.body === "string" ? e.body.slice(0, 400) : null,
+                        extract_regex: e.extract_regex || null,
+                        chain_to_action: e.chain_to_action || null,
+                        user_inputs: e.user_inputs || [],
+                      })),
+                      instructions,
+                    }) },
+                  ], false, aiSettings);
+                  html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
+                  log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
+                } catch (err: any) {
+                  html = buildFallbackHtml(plan, finalEndpoints);
+                  log(`⚠ IA de HTML indisponível; gerei uma página 3D local funcional (${html.length} chars).`, "warn");
+                }
               }
 
               send("done", { plan, endpoints: finalEndpoints, html });
