@@ -17,6 +17,7 @@ import { Route as AuthenticatedCurlTesterRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAiZipRouteImport } from './routes/_authenticated/ai-zip'
 import { Route as ApiToolsCurlRouteImport } from './routes/api/tools/curl'
 import { Route as ApiAiZipRouteImport } from './routes/api/ai/zip'
+import { Route as ApiAiRegenerateRouteImport } from './routes/api/ai/regenerate'
 import { Route as ApiAiFixCurlRouteImport } from './routes/api/ai/fix-curl'
 import { Route as ApiAiConfigureRouteImport } from './routes/api/ai/configure'
 import { Route as ApiAiAutoConfigureRouteImport } from './routes/api/ai/auto-configure'
@@ -62,6 +63,11 @@ const ApiToolsCurlRoute = ApiToolsCurlRouteImport.update({
 const ApiAiZipRoute = ApiAiZipRouteImport.update({
   id: '/api/ai/zip',
   path: '/api/ai/zip',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiRegenerateRoute = ApiAiRegenerateRouteImport.update({
+  id: '/api/ai/regenerate',
+  path: '/api/ai/regenerate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAiFixCurlRoute = ApiAiFixCurlRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
   '/api/ai/configure': typeof ApiAiConfigureRoute
   '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/regenerate': typeof ApiAiRegenerateRoute
   '/api/ai/zip': typeof ApiAiZipRoute
   '/api/tools/curl': typeof ApiToolsCurlRoute
   '/api/public/p/$slug': typeof ApiPublicPSlugRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
   '/api/ai/configure': typeof ApiAiConfigureRoute
   '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/regenerate': typeof ApiAiRegenerateRoute
   '/api/ai/zip': typeof ApiAiZipRoute
   '/api/tools/curl': typeof ApiToolsCurlRoute
   '/api/public/p/$slug': typeof ApiPublicPSlugRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/api/ai/auto-configure': typeof ApiAiAutoConfigureRoute
   '/api/ai/configure': typeof ApiAiConfigureRoute
   '/api/ai/fix-curl': typeof ApiAiFixCurlRoute
+  '/api/ai/regenerate': typeof ApiAiRegenerateRoute
   '/api/ai/zip': typeof ApiAiZipRoute
   '/api/tools/curl': typeof ApiToolsCurlRoute
   '/api/public/p/$slug': typeof ApiPublicPSlugRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/api/ai/auto-configure'
     | '/api/ai/configure'
     | '/api/ai/fix-curl'
+    | '/api/ai/regenerate'
     | '/api/ai/zip'
     | '/api/tools/curl'
     | '/api/public/p/$slug'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/api/ai/auto-configure'
     | '/api/ai/configure'
     | '/api/ai/fix-curl'
+    | '/api/ai/regenerate'
     | '/api/ai/zip'
     | '/api/tools/curl'
     | '/api/public/p/$slug'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/api/ai/auto-configure'
     | '/api/ai/configure'
     | '/api/ai/fix-curl'
+    | '/api/ai/regenerate'
     | '/api/ai/zip'
     | '/api/tools/curl'
     | '/api/public/p/$slug'
@@ -210,6 +222,7 @@ export interface RootRouteChildren {
   ApiAiAutoConfigureRoute: typeof ApiAiAutoConfigureRoute
   ApiAiConfigureRoute: typeof ApiAiConfigureRoute
   ApiAiFixCurlRoute: typeof ApiAiFixCurlRoute
+  ApiAiRegenerateRoute: typeof ApiAiRegenerateRoute
   ApiAiZipRoute: typeof ApiAiZipRoute
   ApiToolsCurlRoute: typeof ApiToolsCurlRoute
   ApiPublicPSlugRoute: typeof ApiPublicPSlugRoute
@@ -272,6 +285,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ai/zip'
       fullPath: '/api/ai/zip'
       preLoaderRoute: typeof ApiAiZipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/regenerate': {
+      id: '/api/ai/regenerate'
+      path: '/api/ai/regenerate'
+      fullPath: '/api/ai/regenerate'
+      preLoaderRoute: typeof ApiAiRegenerateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ai/fix-curl': {
@@ -353,6 +373,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAiAutoConfigureRoute: ApiAiAutoConfigureRoute,
   ApiAiConfigureRoute: ApiAiConfigureRoute,
   ApiAiFixCurlRoute: ApiAiFixCurlRoute,
+  ApiAiRegenerateRoute: ApiAiRegenerateRoute,
   ApiAiZipRoute: ApiAiZipRoute,
   ApiToolsCurlRoute: ApiToolsCurlRoute,
   ApiPublicPSlugRoute: ApiPublicPSlugRoute,
@@ -361,3 +382,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
