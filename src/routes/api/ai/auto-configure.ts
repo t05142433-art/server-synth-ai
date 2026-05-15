@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -12,55 +11,16 @@ const safeUrl = (u: string) => {
   try { const url = new URL(u); return /^https?:$/.test(url.protocol) && !PRIVATE.test(url.hostname); } catch { return false; }
 };
 
-type AiSettings = {
-  mode: "auto" | "manual";
-  provider: "lovable" | "openai_compatible";
-  model: string;
-  base_url?: string | null;
-  api_key?: string | null;
-  temperature?: number | null;
-  max_rounds?: number | null;
-};
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
-const DEFAULT_AI: AiSettings = {
-  mode: "auto",
-  provider: "lovable",
-  model: "google/gemini-3-flash-preview",
-  max_rounds: 2,
-  temperature: 0.2,
-};
-
-async function loadAiSettings(request: Request): Promise<AiSettings> {
-  const auth = request.headers.get("authorization");
-  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-  if (!token) return DEFAULT_AI;
-  try {
-    const { data: userRes } = await supabaseAdmin.auth.getUser(token);
-    const userId = userRes.user?.id;
-    if (!userId) return DEFAULT_AI;
-    const { data } = await (supabaseAdmin as any)
-      .from("ai_settings")
-      .select("mode,provider,model,base_url,api_key,temperature,max_rounds")
-      .eq("user_id", userId)
-      .maybeSingle();
-    return data ? { ...DEFAULT_AI, ...data } : DEFAULT_AI;
-  } catch {
-    return DEFAULT_AI;
+class AiError extends Error {
+  status: number;
+  code: "quota" | "credit" | "unauthorized" | "network" | "invalid" | "unknown";
+  detail: string;
+  constructor(status: number, code: AiError["code"], detail: string) {
+    super(`[${code}] HTTP ${status} ${detail}`);
+    this.status = status; this.code = code; this.detail = detail;
   }
-}
-
-function normalizeGatewayUrl(settings: AiSettings) {
-  if (settings.provider === "openai_compatible") {
-    const base = String(settings.base_url || "").trim().replace(/\/$/, "");
-    if (!base || !settings.api_key) throw new Error("Configuração manual incompleta: informe Base URL e API Key no Perfil");
-    return base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
-  }
-  return "https://ai.gateway.lovable.dev/v1/chat/completions";
-}
-
-function headersForGateway(settings: AiSettings, key: string): Record<string, string> {
-  if (settings.provider === "openai_compatible") return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
-  return { "Lovable-API-Key": key, "X-Lovable-AIG-SDK": "vercel-ai-sdk", "Content-Type": "application/json" };
 }
 
 const SYS_PLAN = `Você é um engenheiro de APIs trabalhando como um terminal Termux com IA. Recebe:
@@ -126,26 +86,26 @@ const MODEL_FALLBACKS = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callAi(messages: any[], jsonObject = true, settings: AiSettings = DEFAULT_AI) {
-  const apiKey = settings.provider === "openai_compatible" ? settings.api_key : process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error(settings.provider === "openai_compatible" ? "API Key manual ausente" : "LOVABLE_API_KEY ausente");
-  let lastErr = "";
-  const models = settings.provider === "openai_compatible" ? [settings.model] : [settings.model, ...MODEL_FALLBACKS.filter((m) => m !== settings.model)];
-  const url = normalizeGatewayUrl(settings);
-  const rounds = Math.max(1, Math.min(Number(settings.max_rounds || 2), 4));
-  for (let round = 0; round < rounds; round++) {
+async function callAi(messages: any[], jsonObject = true) {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) throw new AiError(500, "unauthorized", "LOVABLE_API_KEY ausente no servidor");
+  let lastStatus = 0;
+  let lastDetail = "";
+  let lastCode: AiError["code"] = "unknown";
+  const models = ["google/gemini-3-flash-preview", ...MODEL_FALLBACKS.filter((m) => m !== "google/gemini-3-flash-preview")];
+  for (let round = 0; round < 2; round++) {
     for (const model of models) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 25_000);
-        const res = await fetch(url, {
+        const res = await fetch(GATEWAY_URL, {
           method: "POST",
-          headers: headersForGateway(settings, apiKey),
+          headers: { "Lovable-API-Key": apiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk", "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
             model,
             messages,
-            temperature: settings.temperature ?? 0.2,
+            temperature: 0.2,
             ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
           }),
         });
@@ -154,24 +114,28 @@ async function callAi(messages: any[], jsonObject = true, settings: AiSettings =
           const data = await res.json();
           const content = data?.choices?.[0]?.message?.content;
           if (content) return content;
-          lastErr = "resposta vazia";
+          lastStatus = 200; lastDetail = "resposta vazia"; lastCode = "invalid";
           continue;
         }
         const txt = (await res.text()).slice(0, 300);
-        lastErr = `${res.status} ${txt}`;
+        lastStatus = res.status; lastDetail = txt;
+        if (res.status === 429) lastCode = "quota";
+        else if (res.status === 402) lastCode = "credit";
+        else if (res.status === 401 || res.status === 403) lastCode = "unauthorized";
+        else lastCode = "unknown";
         if (res.status === 429 || res.status === 402 || res.status >= 500) {
           await sleep(500 + round * 800);
           continue;
         }
         continue;
       } catch (e: any) {
-        lastErr = e?.message || String(e);
+        lastStatus = 0; lastDetail = e?.message || String(e); lastCode = "network";
         await sleep(350);
         continue;
       }
     }
   }
-  throw new Error(`AI indisponivel apos varias tentativas: ${lastErr}`);
+  throw new AiError(lastStatus, lastCode, lastDetail);
 }
 
 function tokenizeCurl(curl: string) {
@@ -309,7 +273,6 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
       POST: async ({ request }) => {
         const { curls = [], instructions = "", expected_output = "", generate_html = false, max_retries = 12 } = await request.json();
         if (!Array.isArray(curls) || curls.length === 0) return Response.json({ error: "Envie ao menos 1 cURL" }, { status: 400 });
-        const aiSettings = await loadAiSettings(request);
 
         const enc = new TextEncoder();
         const stream = new ReadableStream({
@@ -318,6 +281,11 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               ctrl.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
             const log = (line: string, level: "info" | "ok" | "warn" | "err" | "ai" = "info") =>
               send("log", { line, level, t: Date.now() });
+            const reportAiError = (err: any, phase: string) => {
+              const ae: AiError = err instanceof AiError ? err : new AiError(0, "unknown", String(err?.message || err));
+              log(`✗ IA falhou em ${phase}: HTTP ${ae.status || "?"} [${ae.code}] ${ae.detail.slice(0, 240)}`, "err");
+              send("ai_error", { phase, code: ae.code, status: ae.status, detail: ae.detail.slice(0, 600) });
+            };
 
             try {
               log(`▶ Iniciando auto-configuração com ${curls.length} cURL(s)…`, "info");
@@ -325,15 +293,16 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
               if (expected_output) log(`🎯 Output esperado fornecido (${expected_output.length} chars)`, "info");
 
               let plan: any;
-              log(`🧠 IA analisando comandos e planejando servidor (${aiSettings.mode === "manual" ? "manual" : "automático"})…`, "ai");
+              log(`🧠 IA analisando comandos e planejando servidor…`, "ai");
               try {
                 const planRaw = await callAi([
                   { role: "system", content: SYS_PLAN },
                   { role: "user", content: `cURLs:\n${curls.map((c: string, i: number) => `# ${i + 1}\n${c}`).join("\n\n")}\n\nInstruções: ${instructions || "(nenhuma)"}\n\nOutput esperado:\n${expected_output || "(nenhum)"}` },
-                ], true, aiSettings);
+                ], true);
                 try { plan = JSON.parse(planRaw); } catch { throw new Error("IA devolveu JSON inválido: " + planRaw.slice(0, 200)); }
               } catch (err: any) {
-                log(`⚠ IA indisponível (${String(err?.message || err).slice(0, 180)}). Gerando configuração local para não travar…`, "warn");
+                reportAiError(err, "planejamento");
+                log(`⚠ Gerando configuração local para não travar…`, "warn");
                 plan = buildFallbackPlan(curls, instructions);
               }
               if (!Array.isArray(plan.endpoints) || plan.endpoints.length === 0) plan = buildFallbackPlan(curls, instructions);
@@ -382,14 +351,14 @@ export const Route = createFileRoute("/api/ai/auto-configure")({
                     const fixRaw = await callAi([
                       { role: "system", content: SYS_FIX },
                       { role: "user", content: `Endpoint atual:\n${JSON.stringify(ep, null, 2)}\n\nResposta:\nstatus=${exec.status}\nheaders=${JSON.stringify(exec.headers || {}, null, 2).slice(0, 1000)}\nbody=${(exec.body || exec.error || "").slice(0, 2000)}\n\nOutput esperado: ${expected_output || ep.expected_contains || "(nenhum)"}\n\nTentativas anteriores: ${attempts.length}` },
-                    ], true, aiSettings);
+                    ], true);
                     try {
                       const fix = JSON.parse(fixRaw);
                       if (fix.fix_notes) log(`💡 ${fix.fix_notes}`, "ai");
                       ep = { ...ep, ...fix };
                     } catch { log(`⚠ IA devolveu JSON inválido, repetindo igual`, "warn"); }
                   } catch (err: any) {
-                    log(`⚠ IA não corrigiu agora (${String(err?.message || err).slice(0, 140)}). Mantendo endpoint salvo para edição manual.`, "warn");
+                    reportAiError(err, `correção endpoint ${i + 1}`);
                     break;
                   }
                 }
@@ -455,12 +424,13 @@ REGRAS ABSOLUTAS DE CONEXÃO — LEIA TUDO:
                       })),
                       instructions,
                     }) },
-                  ], false, aiSettings);
+                  ], false);
                   html = htmlRaw.replace(/^```html\n?/, "").replace(/\n?```$/, "").trim();
                   log(`✓ HTML gerado (${html?.length ?? 0} chars)`, "ok");
                 } catch (err: any) {
+                  reportAiError(err, "geração de HTML");
                   html = buildFallbackHtml(plan, finalEndpoints);
-                  log(`⚠ IA de HTML indisponível; gerei uma página 3D local funcional (${html.length} chars).`, "warn");
+                  log(`⚠ Gerei uma página 3D local funcional (${html.length} chars).`, "warn");
                 }
               }
 
