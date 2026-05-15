@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Terminal, Sparkles, Plus, X, Loader2, Copy, CheckCircle2, AlertCircle, Globe, Save, Trash2, Instagram } from "lucide-react";
+import { Terminal, Sparkles, Plus, X, Loader2, Copy, CheckCircle2, AlertCircle, Globe, Save, Trash2, Instagram, Zap, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { seedInstagramBot } from "@/lib/seed-instagram.functions";
@@ -45,6 +45,10 @@ function CurlTester() {
   const [servers, setServers] = useState<ServerRow[]>([]);
   const [pickedServer, setPickedServer] = useState("");
 
+  // AI quota / credit error popup
+  const [aiError, setAiError] = useState<{ phase: string; code: string; status: number; detail: string } | null>(null);
+  const [regenStage, setRegenStage] = useState<null | "idle" | "rotating" | "retrying" | "ok" | "fail">(null);
+
   const termRef = useRef<HTMLDivElement>(null);
   useEffect(() => { termRef.current?.scrollTo({ top: termRef.current.scrollHeight }); }, [logs]);
 
@@ -64,7 +68,7 @@ function CurlTester() {
   const run = async () => {
     const valid = curls.map((c) => c.trim()).filter(Boolean);
     if (!valid.length) { toast.error("Adicione ao menos 1 cURL"); return; }
-    setBusy(true); setLogs([]); setPlan(null); setFinalEndpoints(null); setHtml(null); setSaved(null);
+    setBusy(true); setLogs([]); setPlan(null); setFinalEndpoints(null); setHtml(null); setSaved(null); setAiError(null);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -92,10 +96,32 @@ function CurlTester() {
           else if (ev === "plan") setPlan(data);
           else if (ev === "done") { setFinalEndpoints(data.endpoints); setHtml(data.html); }
           else if (ev === "error") toast.error(data.error);
+          else if (ev === "ai_error") {
+            // só mostra popup pra falhas de quota/credit/unauthorized
+            if (["quota", "credit", "unauthorized"].includes(data.code)) setAiError(data);
+          }
         }
       }
     } catch (e: any) { toast.error(e.message); setLogs((ls) => [...ls, { line: `💥 ${e.message}`, level: "err", t: Date.now() }]); }
     finally { setBusy(false); }
+  };
+
+  const regenerateAi = async () => {
+    setRegenStage("rotating");
+    try {
+      const r = await fetch("/api/ai/regenerate", { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.ok) { setRegenStage("fail"); toast.error(data.error || `HTTP ${r.status}`); return; }
+      setRegenStage("retrying");
+      setAiError(null);
+      await new Promise((r) => setTimeout(r, 600));
+      await run();
+      setRegenStage("ok");
+      setTimeout(() => setRegenStage(null), 1800);
+    } catch (e: any) {
+      setRegenStage("fail");
+      toast.error(e.message);
+    }
   };
 
   const slugify = () => Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
@@ -339,7 +365,100 @@ function CurlTester() {
           </div>
         </div>
       )}
+
+      {(aiError || regenStage) && (
+        <AiQuotaModal err={aiError} stage={regenStage} onClose={() => { setAiError(null); setRegenStage(null); }} onRegenerate={regenerateAi} />
+      )}
     </main>
+  );
+}
+
+function AiQuotaModal({ err, stage, onClose, onRegenerate }: {
+  err: { phase: string; code: string; status: number; detail: string } | null;
+  stage: null | "idle" | "rotating" | "retrying" | "ok" | "fail";
+  onClose: () => void;
+  onRegenerate: () => void;
+}) {
+  const busy = stage === "rotating" || stage === "retrying";
+  const titleByCode: Record<string, string> = {
+    quota: "Cota da IA esgotada (HTTP 429)",
+    credit: "Créditos da IA esgotados (HTTP 402)",
+    unauthorized: "Chave da IA inválida ou expirada",
+  };
+  const title = err ? titleByCode[err.code] || `Erro da IA (${err.code})` : stage === "ok" ? "Nova IA pronta!" : "Atualizando IA…";
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 backdrop-blur-sm p-4" onClick={() => !busy && onClose()}>
+      <style>{`
+        @keyframes aiFloat { 0%,100% { transform: translate3d(0,0,0) rotateX(8deg) rotateY(-8deg); } 50% { transform: translate3d(0,-10px,0) rotateX(-6deg) rotateY(8deg); } }
+        @keyframes aiSpin { to { transform: rotate(360deg); } }
+        @keyframes aiPulse { 0%,100% { opacity:.6; transform: scale(1);} 50% { opacity:1; transform: scale(1.08);} }
+        @keyframes aiMesh { to { transform: translate3d(3%,-4%,0) scale(1.1); } }
+      `}</style>
+      <div className="relative w-full max-w-lg rounded-2xl border border-primary/30 bg-card p-6 overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()} style={{ perspective: "1400px" }}>
+        <div aria-hidden className="absolute inset-[-30%] -z-0 opacity-70 pointer-events-none" style={{ background: "radial-gradient(circle at 30% 30%, oklch(0.72 0.18 160 / .35), transparent 35%), radial-gradient(circle at 80% 20%, oklch(0.7 0.2 200 / .3), transparent 38%), radial-gradient(circle at 50% 90%, oklch(0.65 0.24 25 / .25), transparent 40%)", filter: "blur(40px)", animation: "aiMesh 9s ease-in-out infinite alternate" }} />
+        <div className="relative z-10">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="size-9 rounded-lg bg-[image:var(--gradient-hero)] grid place-items-center" style={{ animation: "aiFloat 4s ease-in-out infinite", transformStyle: "preserve-3d" }}>
+                <Zap className="size-5 text-primary-foreground" />
+              </div>
+              <h3 className="font-bold tracking-tight">{title}</h3>
+            </div>
+            {!busy && <button onClick={onClose}><X className="size-4" /></button>}
+          </div>
+
+          {err && !stage && (
+            <>
+              <p className="text-sm text-muted-foreground mb-3">
+                Falha em <span className="text-foreground font-medium">{err.phase}</span>. O servidor da IA respondeu com erro de cota/crédito.
+              </p>
+              <pre className="text-[11px] font-mono bg-black/60 border border-border rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap text-red-300 mb-4">{`HTTP ${err.status || "?"} [${err.code}]\n${err.detail}`}</pre>
+              <p className="text-xs text-muted-foreground mb-4">Posso gerar uma nova chave da IA agora e tentar de novo automaticamente.</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-sm">Fechar</button>
+                <button onClick={onRegenerate} className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold inline-flex items-center gap-2" style={{ boxShadow: "var(--shadow-glow)" }}>
+                  <RefreshCw className="size-4" /> Gerar nova IA & tentar
+                </button>
+              </div>
+            </>
+          )}
+
+          {(stage === "rotating" || stage === "retrying") && (
+            <div className="py-6 grid place-items-center gap-4">
+              <div className="relative size-28" style={{ transformStyle: "preserve-3d" }}>
+                <div className="absolute inset-0 rounded-full border-2 border-primary/30 border-t-primary" style={{ animation: "aiSpin 1.2s linear infinite" }} />
+                <div className="absolute inset-3 rounded-full border-2 border-accent/30 border-b-accent" style={{ animation: "aiSpin 1.6s linear infinite reverse" }} />
+                <div className="absolute inset-6 rounded-full bg-[image:var(--gradient-hero)]" style={{ animation: "aiPulse 1.4s ease-in-out infinite" }} />
+              </div>
+              <div className="text-center">
+                <div className="font-semibold">{stage === "rotating" ? "Gerando nova IA…" : "Reconfigurando servidor…"}</div>
+                <div className="text-xs text-muted-foreground mt-1">{stage === "rotating" ? "rotacionando chave do gateway" : "tentando de novo com a IA atualizada"}</div>
+              </div>
+            </div>
+          )}
+
+          {stage === "ok" && (
+            <div className="py-6 grid place-items-center gap-3">
+              <div className="size-16 rounded-full bg-emerald-500/20 grid place-items-center" style={{ animation: "aiPulse 1.4s ease-in-out infinite" }}>
+                <CheckCircle2 className="size-8 text-emerald-400" />
+              </div>
+              <div className="font-semibold text-emerald-400">IA atualizada com sucesso</div>
+            </div>
+          )}
+
+          {stage === "fail" && (
+            <div className="py-4">
+              <div className="flex items-center gap-2 text-destructive font-semibold mb-2"><AlertCircle className="size-4" /> Não consegui rotacionar agora.</div>
+              <p className="text-xs text-muted-foreground mb-3">Tente de novo em alguns segundos, ou adicione créditos no workspace.</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-sm">Fechar</button>
+                <button onClick={onRegenerate} className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold">Tentar de novo</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
