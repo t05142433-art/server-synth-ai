@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, LayoutDashboard, Sparkles, Terminal, UserCog } from "lucide-react";
+import { LogOut, LayoutDashboard, Sparkles, Terminal } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthLayout,
@@ -43,9 +43,6 @@ function AuthLayout() {
             </Link>
             <Link to="/curl-tester" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-2" activeProps={{ className: "px-3 py-1.5 rounded-md bg-muted flex items-center gap-2" }}>
               <Terminal className="size-4" /> cURL
-            </Link>
-            <Link to="/profile" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-2" activeProps={{ className: "px-3 py-1.5 rounded-md bg-muted flex items-center gap-2" }}>
-              <UserCog className="size-4" /> Perfil
             </Link>
             <span className="text-xs text-muted-foreground mx-3 hidden md:inline">{email}</span>
             <button onClick={async () => { await supabase.auth.signOut(); navigate({ to: "/login" }); }} className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-2 text-muted-foreground" title="Sair">
